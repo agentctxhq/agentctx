@@ -1,17 +1,17 @@
 {
   "name": "@agentctxhq/agentctx",
   "version": "0.0.1",
-  "description": "Memory layer for AI coding agents",
+  "description": "Context layer for Claude Code — persistent structured context across sessions",
   "bin": {
     "agentctx": "./index.js"
   },
   "keywords": [
     "claude-code",
-    "cursor",
     "mcp",
-    "memory",
+    "context",
     "agent",
-    "context"
+    "hooks",
+    "developer-tools"
   ],
   "author": "agentctxhq",
   "license": "MIT",
