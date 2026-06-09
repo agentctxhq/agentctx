@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The core distinction: this is a **context** tool, not a memory tool. Context is structured understanding of what is being built; memory is a log of what happened.
 
-This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub. See ROADMAP.md for the full plan.
+This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub. See ROADMAP.md for the milestone plan and ARCHITECTURE.md for all architecture decisions (ADR-style) — consult ARCHITECTURE.md before making design-level changes; it is the source of truth for technical direction.
 
 **Target: Claude Code only.** No plans for Cursor or other agents.
 
@@ -19,11 +19,13 @@ This project is in early pre-alpha (v0.0.1). The current codebase is a placehold
 
 The project is a Node.js CLI package. Entry point is `index.js`, exposed as the `agentctx` binary via `package.json#bin`. There are no dependencies yet.
 
-When implemented, agentctx will:
-- Run locally on the developer's machine
-- Persist context to `~/.agentctx/` using SQLite (no cloud, no API key)
-- Register as an MCP server that Claude Code connects to
-- Install hooks into `.claude/settings.json`
+Key constraints from ARCHITECTURE.md (do not violate without updating the ADRs):
+- No daemon/background process — hooks invoke the CLI, which reads/writes SQLite and exits
+- Single SQLite file via `node:sqlite` (Node ≥ 24), WAL mode; sqlite-vec + FTS5 for hybrid retrieval
+- No LLM calls in the default pipeline; local embeddings only (transformers.js, lazy-downloaded)
+- SessionStart injection hard-capped at 1,500 tokens; deep retrieval via MCP progressive disclosure
+- Bi-temporal records (`valid_from`/`superseded_at`) — facts are superseded, never silently overwritten
+- No component on the critical install path may require a compiler
 
 ## Commands
 

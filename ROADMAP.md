@@ -1,223 +1,128 @@
 # agentctx Roadmap
 
-agentctx is a context layer for Claude Code. This document describes what we are building, why, and in what order.
+agentctx is a context layer for Claude Code: a structured, persistent, searchable model of what you are building — not a log of what happened. This document describes what we are building and in what order. The technical reasoning behind these choices lives in [ARCHITECTURE.md](./ARCHITECTURE.md); read that first if you want the *why*.
 
 ---
 
 ## The Problem
 
-Claude Code has a context problem — not a memory problem. The distinction matters.
+Every Claude Code session starts amnesiac. You re-explain architecture, repeat conventions, re-describe where you left off; Claude re-infers your stack every morning; the decision you made last Tuesday is invisible today; and when autocompact fires, working state is destroyed without ceremony.
 
-**Memory** is a log of what happened. **Context** is a structured understanding of what you are building.
-
-Today, every Claude Code session starts from scratch:
-
-- You re-explain your architecture
-- You repeat your coding conventions
-- You re-describe where you left off
-- Claude re-infers your tech stack, test framework, and file structure
-- Architectural decisions made last week are invisible today
-- Context degrades as the window fills; quality drops before the session ends
-
-This wastes tokens, produces lower-quality output, and forces developers to act as living documentation systems for their own projects.
-
----
+The existing fixes are memory tools — they log what happened and replay it. The best of them suffer from documented, recurring failure modes: session-start injection consuming 40% of the context window, background daemons that leak and crash, LLM compression that silently burns your Claude quota, and stores that accumulate stale facts until retrieval confidently returns the wrong answer.
 
 ## The Approach
 
-agentctx integrates with Claude Code through two surfaces:
+A context layer with five non-negotiables (each is an ADR in ARCHITECTURE.md):
 
-**MCP server** — a local server Claude can query mid-session to retrieve project context, architectural decisions, codebase topology, and developer preferences.
+1. **Hard token budgets** — session-start injection is capped at 1,500 tokens in code; everything deeper is on-demand via MCP progressive disclosure
+2. **No infrastructure** — no daemon, no Docker, no sidecar DB; hook-invoked CLI + one SQLite file
+3. **No LLM in the default pipeline** — deterministic capture and retrieval; zero hidden API cost
+4. **Bi-temporal facts** — decisions get superseded, never silently stale ("what do we use?" and "what did we use in March?" both answerable)
+5. **Inspectable** — export everything to Markdown; team context lives in git as diffable text
 
-**Hook layer** — hooks that fire automatically at key Claude Code lifecycle events to capture, store, and inject context without interrupting your workflow.
-
-All storage is local (`~/.agentctx/`). No cloud. No API key. No telemetry.
+And one positioning rule: agentctx sits **beneath** Claude Code's native memory (MEMORY.md / Auto Dream), as the deep, structured, searchable, team-shareable store — it does not compete with the 200-line hot working set.
 
 ---
 
 ## Milestones
 
-### v0.1 — Foundation
-*Goal: session continuity and zero context loss on restart.*
+Each milestone ships something independently useful. Keyword search before embeddings; capture before adaptation; single-player before team.
 
-**MCP Server (Core)**
-- Local MCP server running on the developer's machine
-- Register via `agentctx init` — writes to `.claude/settings.json` automatically
-- Tools exposed:
-  - `get_project_context` — return active project context summary
-  - `get_architecture_decisions` — searchable log of recorded decisions
-  - `get_project_metadata` — tech stack, test command, build command, package manager
+### v0.1 — Foundation: capture, store, retrieve (keyword-only)
 
-**Local Storage**
-- SQLite database at `~/.agentctx/db.sqlite`
-- Per-project namespace keyed by git remote or directory hash
-- Schema: sessions, decisions, metadata, preferences
+*Independently useful as: session continuity + searchable decision log, zero model download.*
 
-**Session Continuity Hooks**
-- `Stop` hook: capture structured session handover (active task, decisions made, files touched, next steps)
-- `SessionStart` hook (via MCP tool injection): load handover document and inject as context
-- `PreCompact` hook: save context snapshot before autocompact fires
-- Eliminates "context lost between sessions" problem
+**Storage core**
+- Single SQLite database (`~/.agentctx/agentctx.db`), WAL mode, via `node:sqlite` (Node ≥ 24)
+- Bi-temporal record schema with the seven record types (`decision`, `convention`, `preference`, `discovery`, `bugfix`, `handover`, `profile`)
+- FTS5 keyword search with recency/type reranking — the retrieval floor that everything later builds on
+- Per-project namespacing keyed by git remote (path-hash fallback)
+
+**Hook layer**
+- `agentctx init` / `agentctx uninstall`: explicit, reversible, version-stable installation (hooks call `agentctx hook <event>` via PATH — never versioned paths)
+- `SessionStart`: inject the budgeted digest (≤ 1,500 tokens, hard-capped; truncate, never overflow)
+- `Stop`: write the session handover record (active task, decisions made, files touched, next steps) — parses the transcript JSONL via `transcript_path`
+- `PreCompact`: snapshot working state before compaction destroys it
+- `SessionEnd`: flush + pre-compute the next session's digest (keeps `SessionStart` instant)
+- All capture hooks registered `async: true` — never block the agentic loop
+
+**MCP server (stdio, user-scope registration)**
+- The six-tool surface: `ctx_search`, `ctx_get`, `ctx_record`, `ctx_supersede`, `ctx_project`, `ctx_related`
+- Progressive disclosure contract from day one: search returns a compact index (~50 tokens/result); full records only by explicit `ctx_get`
+
+**Capture pipeline (deterministic)**
+- Typed extraction from hook payloads; SHA-256 dedup (5-minute window); privacy filter (secret-pattern scrubbing, path ignores)
+- Project profile auto-detection: language, framework, test/build commands, package manager, entry points
 
 **CLI**
-- `agentctx init` — register MCP server + install hooks into `.claude/settings.json`
-- `agentctx status` — show current project context snapshot
-- `agentctx reset` — clear stored context for current project
+- `agentctx status` (including cumulative injection-token accounting — we measure the tax we impose), `agentctx search`, `agentctx show <id>`, `agentctx export`, `agentctx reset`
+
+### v0.2 — Semantic layer: hybrid retrieval
+
+*Independently useful as: retrieval that finds "how do we handle auth errors" — not just exact keywords.*
+
+- Local embeddings: `@huggingface/transformers` v4 + `bge-small-en-v1.5` q8 (~34 MB, 384 dims)
+- Lazy model download with progress notice; eager option in `agentctx init`; `--no-embeddings` opt-out; fully offline after download
+- `sqlite-vec` for exact brute-force vector search (no ANN — wrong tool below ~100k chunks), prebuilt platform binaries as optionalDependencies
+- Hybrid fusion: FTS5 + vector via Reciprocal Rank Fusion (k=60) + recency decay + pinning, in one SQL query
+- Embedding backfill in batch at `SessionEnd` (one model load per session, `pending_embedding` flag for crash safety)
+- The full four-step degradation ladder shipped and tested: hybrid → JS-cosine fallback → keyword-only (`degraded` flag) → LIKE
+- Entity extraction (deterministic): file paths, symbols, package names linked to records; `ctx_search(file=...)` filtering
+- **Prototype OQ-1:** per-prompt retrieval via `UserPromptSubmit` — measure latency against the 30s budget before adopting
+
+### v0.3 — Context lifecycle: supersession, consolidation, adaptation
+
+*Independently useful as: a store that stays correct and lean over months of use.*
+
+- Deterministic supersession UX: `ctx_supersede` flows, rule-based supersession for keyed types (new test command replaces old), history queries ("as of March")
+- Consolidation pass at `SessionEnd` (time-boxed): access-strengthening + Ebbinghaus-style decay scoring, near-duplicate merging (same-type cosine threshold), archival of long-superseded records
+- Developer preference learning: capture corrections (deterministic signals — repeated user edits to Claude's output patterns) into `preference` records; surface for confirmation, never silently apply
+- `CwdChanged` project switching; `WorktreeCreate` context inheritance (resolve OQ-2: shared project store, per-worktree handovers)
+- `SubagentStart` context injection (matcher-scoped, budgeted like SessionStart)
+- Optional LLM enrichment mode (off by default, spend reported in `agentctx status`): handover narrative polish, semantic-conflict flagging for human confirmation
+- Claude Code plugin packaging as a second distribution channel (CLI remains primary) — revisit of ADR-010's provisional
+
+### v0.4 — Trust and measurement
+
+*Independently useful as: proof, not promises.*
+
+- Reproducible public eval: seeded repository + scripted multi-session tasks + retrieval-quality scoring (no competitor publishes one; self-reported benchmarks are the norm we break from)
+- Token-impact reporting: per-session and cumulative injection cost, digest hit-rate (how often injected content was actually relevant — measurable via `ctx_get` follow-ups)
+- Tuning from real data: digest composition, decay half-lives, RRF rerank weights
+- Hardening: Windows support decision (OQ-3), linux-arm64/musl verification, settings.json edit robustness across Claude Code versions
+
+### v0.5 — Team context
+
+*Independently useful as: architectural knowledge that survives beyond any one developer's machine.*
+
+- Team store: `.agentctx/context.md` in the repo — decisions, conventions, project profile as line-oriented, PR-diffable Markdown
+- Import-on-SessionStart: teammates' committed decisions flow into local retrieval automatically
+- `agentctx promote <id>`: explicit personal→team promotion (never automatic — privacy by default)
+- Round-trip editing: hand-edits to the team file import cleanly back into the store
+- Onboarding flow: a new developer clones the repo and gets the project's full decision history in their first session
+
+### Later / exploratory
+
+- MEMORY.md bridge (opt-in): suggest promotion of hot agentctx records into Claude Code's native 200-line working set (ADR-013)
+- "Instant tier" embeddings: model2vec/potion static embeddings (~8 MB, near-zero cold start) if we accept owning a JS port
+- Cross-machine personal sync (file-based, user-controlled — still no cloud service)
+- Channels integration for pushing external context (CI results) into running sessions — research-preview dependent
 
 ---
 
-### v0.2 — Project Adaptation
-*Goal: Claude Code adapts to each repo automatically.*
+## Success Criteria
 
-**Project Metadata Registry**
-- Auto-detect tech stack on `init` and on `CwdChanged` hook
-- Detect: language, framework, test framework, build tool, package manager, entry points
-- Store in `~/.agentctx/<project>/metadata.json`
-- `SessionStart` hook injects metadata — Claude never re-infers these basics
+- **Injection tax:** ≤ 1,500 tokens at session start, verified by self-accounting — against a category leader criticized for ~40% of the window
+- **Install:** one command, no compiler, no daemon, works offline after optional 34 MB model download; `uninstall` leaves zero residue
+- **Continuity:** new session knows the active task, recent decisions, and where you left off — without the user re-explaining
+- **Correctness over time:** superseded facts never surface as current in default retrieval
+- **Trust:** every stored byte is exportable, readable, and (for team context) diffable in a PR
 
-**Architectural Decisions Log**
-- MCP tool: `record_decision(title, rationale, context)` — Claude calls this when significant decisions are made
-- MCP tool: `search_decisions(query)` — retrieve relevant past decisions
-- `PostToolUse` hook: prompt Claude to record decision after key write operations
-- Each decision stored with timestamp, git branch, and affected files
+## Non-Goals
 
-**Codebase Topology Index**
-- On `init` and on `PostToolUse` (write): build/update a graph of file relationships
-- Track which files are edited together most often
-- MCP tool: `get_related_files(filepath)` — return related files and context
-- `PreToolUse` hook: when Claude reads a file, inject related architectural notes
-
-**Developer Profile**
-- Store coding preferences in `~/.agentctx/profile.json`:
-  - indentation, naming conventions, test style, error handling patterns, workflow style
-- `agentctx profile` — view and edit preferences
-- `SessionStart` hook injects profile as part of initial context
-
----
-
-### v0.3 — Token Efficiency
-*Goal: measurably reduce token burn per session.*
-
-**Context Deduplication**
-- Hash context state before each API call
-- Skip redundant resubmissions by comparing against last-sent hash
-- Context diffing: only resend changed sections
-
-**Smart Context Pruning**
-- Track which context sections have been unused for N turns
-- MCP tool: `get_token_usage()` — show what's consuming context window space
-- `agentctx audit` — report on context sections by cost and recency
-- Auto-generate `.claudeignore` suggestions per project type (Node, Python, Go, etc.)
-
-**Compression-Quality Validation**
-- `PreCompact` hook: snapshot context state before compaction
-- `PostCompact` hook: validate that compaction reduced tokens by ≥30%
-- Log compression efficiency metrics per session
-
-**Session Metrics**
-- Per-session tracking: tokens in/out, context window % at end, turns, tool calls by type, compaction count
-- Store in `~/.agentctx/<project>/sessions/`
-- MCP tool: `get_session_insights()` — return productivity trends
-
----
-
-### v0.4 — Learning and Adaptation
-*Goal: agentctx learns from your sessions and gets better over time.*
-
-**Style Inference**
-- Analyze code written across sessions to detect consistent patterns
-- Auto-update developer profile: indentation, naming, comment density, test structure
-- `PostToolUse` hook on Write: extract style signals from written code
-- Periodically surface detected patterns: "Detected you prefer arrow functions — want to save this?"
-
-**Workflow Pattern Recognition**
-- Track which sequences of tool calls lead to successful outcomes
-- Identify developer workflow style (plan-first vs. autonomous, test-first vs. test-after)
-- Surface suggestions: "You run tests after every change — want agentctx to automate this?"
-
-**Instruction Impact Scoring**
-- Track which CLAUDE.md rules and instructions Claude followed without prompting
-- Score instructions by adherence impact
-- `agentctx audit-instructions` — surface low-impact rules (candidates for removal) and high-impact rules (keep and reinforce)
-
-**Worktree Context Inheritance**
-- `WorktreeCreate` hook: automatically copy parent context, profile, and decisions to new worktree
-- Create branch-specific context namespace
-- Pre-populate with recent decisions from parent branch
-
----
-
-### v0.5 — Team Context
-*Goal: shared architectural knowledge that survives beyond any individual developer.*
-
-**Team Decisions Layer**
-- Separate namespace for team-wide decisions (`~/.agentctx/<project>/team-decisions.md`)
-- Checked into the repo so it's shared across developers
-- MCP tool: `get_team_context()` — return shared architectural knowledge
-- `SessionStart` hook loads team context alongside personal preferences
-
-**Onboarding Packages**
-- `agentctx export-onboarding` — generate a comprehensive onboarding document
-  - Architecture overview, key decisions, build/test commands, common workflows, known gotchas
-- `agentctx import-onboarding <path>` — bootstrap context for a new developer
-- New developers start with full project context, not from scratch
-
----
-
-## Hook Reference
-
-agentctx uses the following Claude Code hooks:
-
-| Hook | Purpose |
-|------|---------|
-| `Stop` | Capture session handover document before session ends |
-| `SessionStart` (via MCP) | Inject project context, developer profile, recent decisions |
-| `PreCompact` | Snapshot context before autocompact; validate post-compaction quality |
-| `PostCompact` | Log compression efficiency; alert if reduction < 30% |
-| `PreToolUse` (Read) | Inject related architectural notes before Claude reads a file |
-| `PostToolUse` (Write) | Prompt decision recording; extract style signals; update topology index |
-| `CwdChanged` | Detect project switch; load new project context |
-| `WorktreeCreate` | Inherit context from parent branch into new worktree |
-
----
-
-## MCP Tools Reference
-
-Tools exposed by the agentctx MCP server:
-
-| Tool | Description |
-|------|-------------|
-| `get_project_context` | Return current project context summary |
-| `get_architecture_decisions` | Return log of recorded architectural decisions |
-| `search_decisions(query)` | Semantic search over decision history |
-| `record_decision(title, rationale, context)` | Save an architectural decision |
-| `get_project_metadata` | Return tech stack, test command, build command |
-| `get_related_files(filepath)` | Return files commonly edited alongside this one |
-| `get_developer_profile` | Return coding preferences and workflow style |
-| `get_session_insights` | Return token usage and productivity trends |
-| `get_token_usage` | Show what's consuming the current context window |
-| `get_team_context` | Return shared team architectural decisions |
-
----
-
-## Design Principles
-
-**Local-first.** All data lives in `~/.agentctx/` on the developer's machine. No cloud storage, no API keys, no tracking.
-
-**Context, not memory.** We store structured understanding of what is being built — not a transcript of what happened.
-
-**Zero friction.** `agentctx init` is a one-time setup. After that, it works silently in the background.
-
-**Claude Code only.** We are building deep, high-quality integration with Claude Code. No plans for other agents until this integration is excellent.
-
-**Unobtrusive.** agentctx enhances Claude Code; it does not replace it or change how you work. The goal is to make your existing workflow better.
-
----
-
-## What is not on the roadmap
-
-- Cursor integration
-- Cloud sync or remote storage
-- Web dashboard or UI
-- Support for other AI coding agents
-- Open context protocol (revisit after v0.5 is solid)
+- Other agents (Cursor, Codex, etc.) — Claude Code-native depth is the differentiator, not breadth
+- Cloud sync, hosted service, accounts, API keys, telemetry
+- Replacing Claude Code's native memory, CLAUDE.md, or skills — we sit beneath them
+- LLM-dependent core pipeline — enrichment stays optional forever
+- ANN indexes, graph databases, or any second storage system
+- A web dashboard (the CLI + Markdown export *is* the UI)

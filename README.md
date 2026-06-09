@@ -45,7 +45,7 @@ agentctx init
 
 This project is in early pre-alpha (`v0.0.1`). The current codebase is a placeholder stub.
 
-Active development is targeting `v0.1`. See [ROADMAP.md](./ROADMAP.md) for the full plan.
+Active development is targeting `v0.1`. See [ROADMAP.md](./ROADMAP.md) for the full plan and [ARCHITECTURE.md](./ARCHITECTURE.md) for the technical design and the reasoning behind it.
 
 ---
 
