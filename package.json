@@ -1,0 +1,23 @@
+{
+  "name": "@agentctxhq/agentctx",
+  "version": "0.0.1",
+  "description": "Memory layer for AI coding agents",
+  "bin": {
+    "agentctx": "./index.js"
+  },
+  "keywords": [
+    "claude-code",
+    "cursor",
+    "mcp",
+    "memory",
+    "agent",
+    "context"
+  ],
+  "author": "agentctxhq",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentctxhq/agentctx"
+  },
+  "homepage": "https://agentctx.app"
+}
