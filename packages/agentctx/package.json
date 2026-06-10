@@ -1,0 +1,53 @@
+{
+  "name": "@agentctxhq/agentctx",
+  "version": "0.0.1",
+  "description": "Context layer for Claude Code — persistent structured context across sessions",
+  "type": "module",
+  "bin": {
+    "agentctx": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "context",
+    "agent",
+    "hooks",
+    "developer-tools"
+  ],
+  "author": "agentctxhq",
+  "license": "Elastic-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentctxhq/agentctx",
+    "directory": "packages/agentctx"
+  },
+  "homepage": "https://agentctx.app",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}
