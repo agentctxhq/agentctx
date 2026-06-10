@@ -7,11 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `@agentctxhq/agentctx` is a context layer for Claude Code. It integrates via two surfaces:
 
 1. **MCP server** — exposes tools Claude can call to query project context, architecture decisions, codebase topology, and developer preferences
-2. **Hook layer** — installs Claude Code hooks for automatic context capture (SessionEnd), context injection (SessionStart), and enrichment (PreToolUse/PostToolUse)
+2. **Hook layer** — installs Claude Code hooks for budgeted context injection (SessionStart, UserPromptSubmit), observation capture (PostToolUse), and async LLM extraction + consolidation at session end (Stop, SessionEnd)
 
 The core distinction: this is a **context** tool, not a memory tool. Context is structured understanding of what is being built; memory is a log of what happened.
 
-This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub. See ROADMAP.md for the milestone plan and ARCHITECTURE.md for all architecture decisions (ADR-style) — consult ARCHITECTURE.md before making design-level changes; it is the source of truth for technical direction.
+This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub.
+
+Documentation hierarchy — consult before making design-level changes:
+- **VISION.md** — why the project exists and its scope boundaries (the "What agentctx Is Not" list is binding)
+- **SPEC.md** — normative contracts: record types, schema, hook behavior, MCP tool signatures, token budgets. Source of truth in implementation debates
+- **ARCHITECTURE.md** — all architecture decisions (ADR-style) and their rationale
+- **ROADMAP.md** — the milestone plan
+
+Contract changes (record types, tool signatures, budgets) require updating SPEC.md and the relevant ADR in the same PR.
 
 **Target: Claude Code only.** No plans for Cursor or other agents.
 
