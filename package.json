@@ -1,23 +1,24 @@
 {
-  "name": "@agentctxhq/agentctx",
-  "version": "0.0.1",
-  "description": "Context layer for Claude Code — persistent structured context across sessions",
-  "bin": {
-    "agentctx": "./index.js"
-  },
-  "keywords": [
-    "claude-code",
-    "mcp",
-    "context",
-    "agent",
-    "hooks",
-    "developer-tools"
-  ],
-  "author": "agentctxhq",
+  "name": "agentctx-monorepo",
+  "private": true,
+  "description": "Monorepo for agentctx — the context layer for Claude Code",
   "license": "Elastic-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/agentctxhq/agentctx"
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
-  "homepage": "https://agentctx.app"
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }

@@ -47,15 +47,37 @@ This project is in early pre-alpha (`v0.0.1`). The current codebase is a placeho
 
 ---
 
+## Repository layout
+
+```
+packages/agentctx/   the @agentctxhq/agentctx CLI package (TypeScript)
+docs/                design documents: vision, spec, architecture, roadmap
+.github/             CI, issue templates, PR template
+```
+
+This is an npm-workspaces monorepo; the web dashboard (`@agentctxhq/agentctx-ui`, v0.2) will land as a sibling package.
+
 ## Documentation
 
 | Document | Question it answers |
 |---|---|
-| [VISION.md](./VISION.md) | **Why** — the problem, what this is not, what success looks like |
-| [SPEC.md](./SPEC.md) | **What** — normative contracts: context model, hooks, MCP tools, budgets |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | **Why this shape** — every decision, ADR-style, with trade-offs |
-| [ROADMAP.md](./ROADMAP.md) | **When** — milestones from v0.1 to v0.5 |
+| [docs/VISION.md](./docs/VISION.md) | **Why** — the problem, what this is not, what success looks like |
+| [docs/SPEC.md](./docs/SPEC.md) | **What** — normative contracts: context model, hooks, MCP tools, budgets |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **Why this shape** — every decision, ADR-style, with trade-offs |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | **When** — milestones from v0.1 to v0.5 |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute |
+
+## Development
+
+```bash
+npm ci          # install workspace dependencies
+npm run build   # compile TypeScript (all packages)
+npm run test    # run tests (vitest)
+npm run lint    # lint + format check (biome)
+npm run check   # lint + typecheck + test, what CI runs
+```
+
+Requires Node ≥ 20 (see `.nvmrc`).
 
 ---
 

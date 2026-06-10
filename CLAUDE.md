@@ -14,10 +14,10 @@ The core distinction: this is a **context** tool, not a memory tool. Context is 
 This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub.
 
 Documentation hierarchy — consult before making design-level changes:
-- **VISION.md** — why the project exists and its scope boundaries (the "What agentctx Is Not" list is binding)
-- **SPEC.md** — normative contracts: record types, schema, hook behavior, MCP tool signatures, token budgets. Source of truth in implementation debates
-- **ARCHITECTURE.md** — all architecture decisions (ADR-style) and their rationale
-- **ROADMAP.md** — the milestone plan
+- **docs/VISION.md** — why the project exists and its scope boundaries (the "What agentctx Is Not" list is binding)
+- **docs/SPEC.md** — normative contracts: record types, schema, hook behavior, MCP tool signatures, token budgets. Source of truth in implementation debates
+- **docs/ARCHITECTURE.md** — all architecture decisions (ADR-style) and their rationale
+- **docs/ROADMAP.md** — the milestone plan
 
 Contract changes (record types, tool signatures, budgets) require updating SPEC.md and the relevant ADR in the same PR.
 
@@ -25,7 +25,7 @@ Contract changes (record types, tool signatures, budgets) require updating SPEC.
 
 ## Architecture
 
-The project is a Node.js CLI package. Entry point is `index.js`, exposed as the `agentctx` binary via `package.json#bin`. There are no dependencies yet.
+The repo is an npm-workspaces monorepo. The CLI package lives in `packages/agentctx` (TypeScript, ESM): source in `src/`, compiled output in `dist/`, with `dist/cli.js` exposed as the `agentctx` binary via `package.json#bin`. The web dashboard (`@agentctxhq/agentctx-ui`, v0.2) will be a sibling package under `packages/`. There are no runtime dependencies yet; the v0.1 target is zero runtime dependencies beyond `better-sqlite3`.
 
 Key constraints from ARCHITECTURE.md (do not violate without updating the ADRs):
 - No daemon/background process — hooks invoke the CLI, which reads/writes SQLite and exits
@@ -39,13 +39,19 @@ Key constraints from ARCHITECTURE.md (do not violate without updating the ADRs):
 
 ## Commands
 
-No build, test, or lint scripts are configured yet. To run the CLI locally:
+Run from the repo root (npm workspaces):
 
 ```bash
-node index.js
-# or after npm install -g:
-agentctx
+npm ci            # install dev dependencies (Node ≥ 20)
+npm run build     # tsc → packages/agentctx/dist
+npm run test      # vitest, all packages
+npm run typecheck # tsc --noEmit
+npm run lint      # biome check (lint + format)
+npm run check     # lint + typecheck + test — what CI runs
+node packages/agentctx/dist/cli.js   # run the CLI after building
 ```
+
+Run a single test file: `npx vitest run test/cli.test.ts` from `packages/agentctx`.
 
 ## Conventions
 
