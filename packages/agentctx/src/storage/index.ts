@@ -18,6 +18,11 @@ export {
   listRecords,
   supersedeRecord,
 } from "./records.js";
+export {
+  type ProjectResetResult,
+  countProjectRecords,
+  deleteProjectData,
+} from "./maintenance.js";
 export { applyMigrations, currentSchemaVersion, SCHEMA_VERSION } from "./schema.js";
 export {
   type SearchHit,

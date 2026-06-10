@@ -67,6 +67,7 @@ These numbers are design inputs, not aspirations — they constrain where work i
 ```
 ~/.agentctx/
   agentctx.db          # canonical store (SQLite, WAL)
+  config.json          # settings: llm, embeddings, modelTier, reinforceThreshold
   profile/             # global developer preference export
   models/              # embedding model cache (v0.2, lazy-downloaded)
 /tmp/agentctx-<session_id>.json   # per-session injection dedup (derived, disposable)
