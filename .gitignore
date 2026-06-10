@@ -24,3 +24,6 @@ npm-debug.log*
 
 # Local agentctx data (never commit a dev database)
 .agentctx/*.db
+
+# Windows MSYS2 crash dumps
+*.stackdump

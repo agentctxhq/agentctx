@@ -75,6 +75,7 @@ function git(args: string[], cwd: string): string | null {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000,
     }).trim();
     return out.length > 0 ? out : null;
   } catch {

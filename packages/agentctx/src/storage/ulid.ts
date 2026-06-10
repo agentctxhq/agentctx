@@ -44,6 +44,9 @@ function freshRandom(): number[] {
   const bytes = randomBytes(RANDOM_LEN);
   const values: number[] = [];
   for (const byte of bytes) {
+    // One byte per base32 value (& 31 = low 5 bits); intentionally simple —
+    // bit-packing would save 37% of the entropy call but risks off-by-one
+    // errors in the Crockford encoding.
     values.push(byte & 31);
   }
   return values;

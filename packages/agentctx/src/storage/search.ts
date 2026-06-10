@@ -55,8 +55,10 @@ export function searchRecords(
 
   try {
     return { results: ftsSearch(db, projectId, tokens, options.type, limit) };
-  } catch {
-    // FTS5 unavailable or the MATCH expression failed — degrade, never error.
+  } catch (err) {
+    // Only degrade for known FTS5 failures (table absent or bad MATCH expression).
+    // Real DB errors (corrupt database, OOM, busy lock) are rethrown.
+    if (!isFts5Error(err)) throw err;
     return {
       results: likeSearch(db, projectId, tokens, options.type, limit),
       degraded: "like-search",
@@ -152,6 +154,16 @@ function rerankFactor(record: ContextRecord, nowMs: number): number {
   const typeWeight = TYPE_WEIGHTS[record.type];
   const pinBoost = record.pinned ? PINNED_BOOST : 1;
   return recency * typeWeight * pinBoost;
+}
+
+function isFts5Error(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("no such table") ||
+    msg.includes("fts5:") ||
+    msg.includes("unknown special query") ||
+    msg.includes("no such tokenizer")
+  );
 }
 
 function tokenize(query: string): string[] {
