@@ -1,3 +1,24 @@
+# Claude Interactive Assistant
+#
+# Mention-driven Claude for everything that is NOT an automated PR review
+# (reviews live in claude-code-review.yml).
+#
+# What it handles:
+#   - Issue implementation: open an issue (or comment on one) containing "@claude"
+#     plus instructions. Claude implements it on a new branch, runs `npm run check`,
+#     pushes, and opens a DRAFT PR that closes the issue. Marking that PR ready for
+#     review then triggers the automatic review workflow.
+#   - PR follow-ups: mention "@claude" in a PR comment, an inline review comment, or
+#     a review body to ask questions or request fixes — Claude pushes to the PR branch.
+#   - Questions: mention "@claude" anywhere to get an answer with no code changes.
+#
+# Routing rule: top-level PR comments that START with "@claude review" are handled by
+# the review workflow, not this one. Any other "@claude" mention lands here.
+#
+# Cost notes (Claude Pro subscription via OAuth token):
+#   - Runs only on explicit @claude mentions from users with write access (the action
+#     enforces this), so quota is spent only when you ask.
+
 name: Claude Code
 
 on:
@@ -6,24 +27,28 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened, assigned]
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       !startsWith(github.event.comment.body, '@claude review')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
       issues: read
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read # lets Claude read CI results on PRs
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,15 +61,9 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
 
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
-
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
-
+          claude_args: |
+            --allowedTools "Bash(npm ci),Bash(npm run build),Bash(npm run test),Bash(npm run test:*),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run check),Bash(npx vitest:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checkout:*),Bash(gh pr create:*),Bash(gh pr checks:*),Bash(gh run view:*)"
+            --append-system-prompt "Repository conventions for this job: when implementing an issue, work on a new branch named claude/issue-<number>-<slug>, follow CLAUDE.md (Conventional Commits; SPEC.md/ADR updates belong in the same PR as contract changes), run 'npm run check' before finishing and fix what it surfaces, then push and open a DRAFT pull request with 'gh pr create --draft' whose body starts with 'Closes #<issue-number>' and summarizes the approach. Never push to main. When responding on an existing PR, push fixes to that PR's branch. When only asked a question, answer in a comment and change no files."
