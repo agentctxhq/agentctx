@@ -22,6 +22,10 @@ import { ulid } from "./ulid.js";
 /**
  * Read scoping (SPEC §3.4): a project sees its own namespace plus global
  * records from the reserved `_global` namespace — nothing else.
+ *
+ * Edge case: when projectId IS '_global', both branches match and all
+ * _global rows are visible regardless of scope (a namespace sees its own
+ * records without scope restriction). This asymmetry is intentional.
  */
 export const SCOPE_FILTER_SQL = `(project_id = @projectId OR (project_id = '${GLOBAL_PROJECT_ID}' AND scope = 'global'))`;
 
