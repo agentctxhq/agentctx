@@ -75,6 +75,8 @@ CREATE TABLE record_entities (
   PRIMARY KEY (record_id, entity_id)
 );
 
+CREATE INDEX record_entities_entity ON record_entities(entity_id);
+
 CREATE TABLE sessions (
   session_id TEXT PRIMARY KEY,
   project_id TEXT,

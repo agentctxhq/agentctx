@@ -159,7 +159,7 @@ function rerankFactor(record: ContextRecord, nowMs: number): number {
 function isFts5Error(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
-    msg.includes("no such table") ||
+    msg.includes("no such table: records_fts") ||
     msg.includes("fts5:") ||
     msg.includes("unknown special query") ||
     msg.includes("no such tokenizer")
