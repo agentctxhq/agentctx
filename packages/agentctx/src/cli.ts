@@ -1,35 +1,25 @@
 #!/usr/bin/env node
-import { VERSION } from "./index.js";
+/**
+ * Bin entry. Kept import-free on purpose: `agentctx hook <event>` is
+ * Claude Code's hook command, and it must exit 0 silently even when the
+ * install is broken (missing deps, failed native build) — a half-installed
+ * agentctx must never break a Claude Code session (issue 2/7). Everything
+ * else loads lazily via cli/main.js.
+ */
+const argv = process.argv.slice(2);
 
-function main(argv: string[]): number {
-  const [command] = argv;
-
-  switch (command) {
-    case undefined:
-    case "help":
-    case "--help":
-    case "-h":
-      printHelp();
-      return 0;
-    case "--version":
-    case "-v":
-      console.log(VERSION);
-      return 0;
-    default:
-      console.error(`agentctx: unknown command "${command}" — pre-alpha, commands land with v0.1`);
-      console.error("See https://github.com/agentctxhq/agentctx for the roadmap.");
-      return 1;
-  }
+if (argv[0] === "hook") {
+  // Dispatcher stub: every event exits 0 with no output. Real hook
+  // behavior lands in issue 3/7.
+  process.exit(0);
 }
 
-function printHelp(): void {
-  console.log(`agentctx ${VERSION} — the context layer for Claude Code
-
-Pre-alpha: the v0.1 command surface (init, status, search, sync, ...)
-is under active development.
-
-  https://agentctx.app
-  https://github.com/agentctxhq/agentctx`);
-}
-
-process.exit(main(process.argv.slice(2)));
+import("./cli/main.js")
+  .then((m) => m.main(argv))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((error) => {
+    console.error(`agentctx: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
