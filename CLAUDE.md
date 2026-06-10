@@ -21,9 +21,11 @@ The project is a Node.js CLI package. Entry point is `index.js`, exposed as the 
 
 Key constraints from ARCHITECTURE.md (do not violate without updating the ADRs):
 - No daemon/background process — hooks invoke the CLI, which reads/writes SQLite and exits
-- Single SQLite file via `node:sqlite` (Node ≥ 24), WAL mode; sqlite-vec + FTS5 for hybrid retrieval
-- No LLM calls in the default pipeline; local embeddings only (transformers.js, lazy-downloaded)
-- SessionStart injection hard-capped at 1,500 tokens; deep retrieval via MCP progressive disclosure
+- SQLite via `better-sqlite3` (ships FTS5; `node:sqlite` in Node 24 lacks FTS5), WAL mode; sqlite-vec for offline vector work
+- FTS5 is the real-time retrieval floor; ONNX embeddings are offline-only (cold start is 2–15s — too slow for synchronous hooks)
+- LLM extraction (Haiku 4.5) is ON by default at session end (~$0.015/session); runs as a detached subprocess, never blocks hooks
+- SessionStart injection hard-capped at 1,500 tokens; UserPromptSubmit adds ≤2,000 tokens/turn via FTS5 search, session-deduped
+- Deep retrieval via MCP progressive disclosure: ctx_search → ctx_get, never bulk-inject
 - Bi-temporal records (`valid_from`/`superseded_at`) — facts are superseded, never silently overwritten
 - No component on the critical install path may require a compiler
 

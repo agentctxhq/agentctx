@@ -1,6 +1,6 @@
 # agentctx Architecture
 
-This document records the architecture of agentctx, the reasoning behind each decision, and the trade-offs accepted. It is the source of truth for technical direction. The roadmap (ROADMAP.md) describes *when* things ship; this document describes *what* we are building and *why it is shaped this way*.
+This document records the architecture of agentctx — the decisions, the reasoning, and the trade-offs accepted. It is the source of truth for technical direction. ROADMAP.md describes *when* things ship; this document describes *what* we are building and *why it is shaped this way*.
 
 Decisions are recorded ADR-style: context, decision, alternatives considered, trade-offs accepted. Statuses: **Accepted** (build this), **Provisional** (current best answer, revisit at the noted milestone), **Open** (not yet decided).
 
@@ -8,54 +8,75 @@ Decisions are recorded ADR-style: context, decision, alternatives considered, tr
 
 ## 1. Design Philosophy
 
-agentctx is a **context layer**, not a memory log. The distinction drives every decision below:
+### Context, not memory
 
-- **Memory** is a record of what happened: session summaries, observations, conversation facts. Every existing tool in this space (claude-mem, agentmemory, Mem0, mcp-memory-service) is fundamentally a memory log.
-- **Context** is a structured model of what is being built: current architecture decisions with status, conventions, module topology, invariants, developer preferences — with explicit handling for facts that change over time.
+agentctx is a **context layer**, not a memory log. Every existing tool in this space (claude-mem, agentmemory, Mem0, mcp-memory-service, basic-memory) is fundamentally a log of what happened: session summaries, observations, conversation facts. agentctx maintains a structured model of *what is being built*: current architecture decisions with status, conventions, module topology, invariants, developer preferences — with explicit handling for facts that change over time.
 
-Five principles, each a direct response to an observed failure mode in competing tools:
+### The five commitments
 
-| Principle | Failure mode it prevents | Observed where |
+Each is a direct response to a documented failure mode in competing tools:
+
+| Commitment | Failure mode it prevents | Documented where |
 |---|---|---|
+| **LLM enrichment on by default** | A purely deterministic store stays empty in practice; developers don't make explicit `record_decision` calls | Every tool that depends solely on explicit capture |
 | **Hard token budgets, always** | Injection bloat — "40% of context consumed at session start" | claude-mem issues #618, #1848 |
-| **No daemon, no sidecar** | Process leaks, crashes, port conflicts, fragile workers | claude-mem (Bun/Express worker + Chroma), XMem (Docker + 3 DBs) |
-| **No LLM in the default pipeline** | Hidden cost — tools silently burning the user's Claude quota for compression | claude-mem (Agent SDK compression) |
-| **Facts can be superseded, never silently wrong** | Stale context — retrieval returns "we use REST" after the move to gRPC | every naive accumulator |
-| **Inspectable by humans** | Opaque vector-blob stores users can't audit or trust | most vector-DB tools; basic-memory is praised for the opposite |
+| **No daemon, no sidecar** | Process leaks, crashes, port conflicts, fragile workers | claude-mem (Bun/Express + Chroma), XMem (Docker + 3 DBs) |
+| **Facts can be superseded, never silently wrong** | Stale context — retrieval returns "we use REST" after the move to gRPC | Every naive accumulator |
+| **Inspectable by humans** | Opaque vector-blob stores users can't audit or trust | Most vector-DB tools; basic-memory is praised for the opposite |
+
+### Position relative to Claude Code's native memory
+
+Claude Code ships Auto-Memory: a self-edited `MEMORY.md` (~200-line cap) plus an "Auto Dream" reorganization pass. agentctx is the structured, searchable, versioned layer **beneath** this — not a replacement for it:
+
+- Native MEMORY.md = small, hot, prose working set (Letta's "memory block" idea, file-shaped). Claude Code manages it.
+- agentctx = the deep store: thousands of typed, bi-temporal, entity-linked, hybrid-searchable records, plus team sharing and cross-machine portability that the native system lacks by design.
+
+We never write to MEMORY.md uninvited.
 
 ---
 
 ## 2. System Overview
 
 ```
-┌─────────────────────────────  Claude Code  ─────────────────────────────┐
+┌──────────────────────────── Claude Code ────────────────────────────────┐
 │                                                                          │
-│  SessionStart ──► hook ──► budgeted digest (≤1,500 tokens, hard cap)     │
-│  PreCompact ────► hook ──► snapshot working state before context loss    │
-│  PostToolUse ───► hook ──► async capture (typed observations)            │
-│  Stop ──────────► hook ──► session handover record                       │
+│  SessionStart ─────► hook ──► pre-computed digest + global profile       │
+│                              (≤1,500 tokens, hard-capped)                │
 │                                                                          │
-│  MCP tools (deferred-loaded) ◄──► progressive disclosure retrieval       │
+│  UserPromptSubmit ──► hook ──► FTS5 search on actual prompt              │
+│                               (deduped per session, ≤2K tokens/turn)    │
+│                                                                          │
+│  Stop ──────────────► hook ──► async LLM extraction (Haiku 4.5)         │
+│                               writes decisions / preferences / handover  │
+│                                                                          │
+│  PreCompact ────────► hook ──► snapshot working state before loss        │
+│  PostToolUse ───────► hook ──► async typed observation capture           │
+│  SessionEnd ────────► hook ──► offline consolidation + digest pre-compute│
+│                                                                          │
+│  MCP tools (deferred-loaded) ◄──► progressive disclosure                 │
 │      ctx_search → compact index → ctx_get(ids) → full records            │
 └──────────────────────────────────┬───────────────────────────────────────┘
                                    │ hook-invoked CLI (no daemon)
-                                   ▼
-                      ~/.agentctx/agentctx.db  (single SQLite file)
-                      ├── FTS5 (BM25 keyword)       — always available
-                      ├── sqlite-vec (exact vector) — when embeddings enabled
-                      ├── bi-temporal records       — valid_from / superseded_at
-                      └── WAL mode                  — concurrent hook writes
-                                   │
-                      ~/.agentctx/models/           — lazy-downloaded embedding
-                      .agentctx/context.md          — git-committable team export
+                      ┌────────────┴────────────┐
+                      │  ~/.agentctx/            │
+                      │  agentctx.db (SQLite)    │
+                      │  ├── records + edges     │  ← graph adjacency
+                      │  ├── FTS5 virtual table  │  ← real-time retrieval
+                      │  ├── sqlite-vec          │  ← offline consolidation
+                      │  └── WAL mode            │  ← concurrent hooks
+                      │                          │
+                      │  ~/.agentctx/profile/    │  ← global developer prefs
+                      │  ~/.agentctx/models/     │  ← embedding model cache
+                      │  .agentctx/context.md    │  ← git-committable team export
+                      └──────────────────────────┘
 ```
 
-Two integration surfaces, matching the pattern every successful tool converged on:
+Two integration surfaces — the pattern every successful tool in this space converged on:
 
-1. **Hooks** — capture (automatic, deterministic) and cheap injection (small, budgeted)
+1. **Hooks** — automatic capture and injection at lifecycle events
 2. **MCP** — on-demand deep retrieval (Claude decides when to dig)
 
-Hooks-only tools inject indiscriminately; MCP-only tools depend on the model remembering to call them. The hybrid is non-negotiable.
+Hooks-only tools inject indiscriminately. MCP-only tools depend on the model deciding to call them. Neither alone is sufficient.
 
 ---
 
@@ -63,286 +84,529 @@ Hooks-only tools inject indiscriminately; MCP-only tools depend on the model rem
 
 ### ADR-001: Hooks + MCP dual-surface integration — **Accepted**
 
-**Context.** Claude Code offers two integration mechanisms. Pure-MCP tools (basic-memory, mcp-memory-service without hooks) suffer from passivity: the model must *choose* to call the memory tool, and frequently doesn't. Pure-hook tools inject context whether or not it's relevant — a tax on every session.
+**Context.** Claude Code exposes both hooks (lifecycle events that execute scripts) and MCP (tools Claude can call). Pure-MCP tools suffer from passivity; pure-hook tools tax every session with undifferentiated context.
 
-**Decision.** Use hooks for capture and a small SessionStart injection; use MCP for deep retrieval. Specifically:
+**Decision.** Use hooks for capture, minimal injection, and lifecycle management. Use MCP for on-demand retrieval.
 
-| Hook | Role | Notes |
+| Hook | Role | Async? |
 |---|---|---|
-| `SessionStart` | Inject budgeted digest via `additionalContext` | Fires on startup, resume, clear, compact |
-| `Stop` | Write session handover record (active task, decisions, next steps) | Receives `transcript_path` — full session JSONL is readable |
-| `PostToolUse` | Capture typed observations from Write/Edit/Bash results | **`async: true`** — never blocks the agentic loop |
-| `PreCompact` | Snapshot working state before compaction destroys it | Compaction is where context goes to die; nobody else exploits this hook |
-| `SessionEnd` | Final flush + queue consolidation work | Cannot inject context; cleanup only |
-| `CwdChanged` | Switch active project namespace | |
-| `SubagentStart` | (Later) inject task-relevant context into subagents | Matcher on agent type |
+| `SessionStart` | Inject budgeted digest (pre-computed) + global profile | No — must return before session begins |
+| `UserPromptSubmit` | FTS5 search on actual prompt → inject fresh records only | No — 30s budget, must return synchronously |
+| `Stop` | Trigger async LLM extraction (background subprocess) | Yes — session already ending |
+| `PreCompact` | Snapshot working state before compaction destroys it | No |
+| `PostToolUse` | Capture typed observations from tool outputs | Yes — never block the loop |
+| `SessionEnd` | Consolidation pass, pre-compute next SessionStart digest | Async — session is over |
+| `CwdChanged` | Switch active project namespace | Yes |
+| `SubagentStart` | Inject task-relevant context into subagents (v0.3) | Yes |
 
-**Trade-offs.** Hook execution adds latency to the loop; mitigated by `async: true` for all capture hooks (only `SessionStart` is synchronous, and it reads a pre-computed digest — see ADR-007). Hook registration touches the user's `settings.json`, which requires careful, reversible installation (ADR-010).
+**Trade-offs.** `UserPromptSubmit` fires on every turn with a 30s timeout — this is synchronous. We mitigate this by using FTS5-only retrieval at query time (no ONNX model load — see ADR-006). Session resume replays `UserPromptSubmit` output from transcript rather than re-running the hook; therefore `SessionStart` is the reliable injection point for time-sensitive content (it re-runs on resume with `source: "resume"`).
 
-**Rejected.** MCP-only (passivity), hooks-only (no on-demand depth), and a background watcher process that tails transcript files (that's a daemon — see ADR-002).
+**Rejected.** MCP-only (passivity), hooks-only (no on-demand depth), resident file-watcher daemon (that's a daemon — see ADR-002).
 
 ---
 
 ### ADR-002: No daemon. Hook-invoked CLI writes directly to SQLite — **Accepted**
 
-**Context.** claude-mem runs a persistent Bun/Express worker on a per-user port plus a Chroma vector DB process. Its issue tracker is full of process leaks, macOS crashes, and port conflicts. agentmemory pins an entire runtime engine (iii v0.11.2). XMem needs Docker, Neo4j, MongoDB, and Ollama. Infrastructure is the dominant fragility source in this category.
+**Context.** claude-mem runs a persistent Bun/Express worker on a per-user port plus Chroma. agentmemory pins an entire runtime engine (iii v0.11.2). XMem needs Docker. Infrastructure is the dominant fragility source in this category.
 
-**Decision.** Every agentctx invocation is a short-lived process: a hook fires, the CLI runs, reads/writes SQLite, exits. SQLite in WAL mode handles concurrent writers (parallel async hooks) safely. Background-style work (consolidation, embedding backfill) runs opportunistically at session boundaries (`SessionEnd`), not in a resident process.
+**Decision.** Every agentctx invocation is a short-lived process: a hook fires → the CLI runs → reads/writes SQLite → exits. SQLite WAL mode handles concurrent writers (parallel async hooks) safely. Background work (consolidation, LLM extraction) runs as a detached subprocess spawned from `SessionEnd`, not as a resident process.
 
-**Trade-offs.**
-- Cold-start cost per hook invocation (Node startup, ~50–100ms). Acceptable for async hooks; for `SessionStart` we read a digest pre-computed at the previous `SessionEnd` rather than computing on the fly.
-- Embedding model load (~hundreds of ms) per invocation would be too slow *if* we embedded at capture time — so we don't. Capture writes raw text; embedding happens in batch at `SessionEnd` (one process, one model load, all pending chunks).
-- No always-on file watching. We accept this; hooks give us all the lifecycle signal we need.
+**The cold-start question.** Node startup is ~50–100ms. For async hooks this is irrelevant; for the synchronous `SessionStart` and `UserPromptSubmit` hooks, it matters. `SessionStart` reads a pre-computed digest file (written at previous `SessionEnd`) — effectively instant. `UserPromptSubmit` runs FTS5 queries via SQLite — these resolve in 1–5ms after connection open. Total `UserPromptSubmit` latency: ~50–150ms, well within the 30s budget.
 
-**Rejected.** Resident worker (fragility), lazy-spawned worker with idle timeout (still a daemon, just a sneakier one).
+**Rejected.** Resident worker, lazy-spawned worker with idle timeout (still a daemon), or a persistent embedding server (just another daemon).
 
 ---
 
-### ADR-003: Single SQLite file via `node:sqlite`; `better-sqlite3` as fallback — **Provisional** (revisit at v0.1 release)
+### ADR-003: SQLite via `better-sqlite3`; sqlite-vec for vectors — **Accepted** (revised from prior node:sqlite plan)
 
-**Context.** Native-module compilation is the single most common install failure for npm CLIs. `better-sqlite3` has prebuilds for LTS Node only; off the happy path it falls back to node-gyp source compilation. Node ≥ 22 ships `node:sqlite` built in, supporting `loadExtension()` (needed for sqlite-vec) from Node 23.5+, and FTS5 is compiled into current Node releases.
+**Context.** An earlier draft planned to use Node's built-in `node:sqlite` to avoid native dependencies. This was reversed after confirming a critical upstream issue: `node:sqlite` in Node 24 is **not compiled with FTS5 support** (tracked in nodejs/node#56951). FTS5 is our retrieval floor — the system's most important query path. Without it, there is no graceful degradation.
 
-**Decision.** Require Node ≥ 24 (current LTS) and use built-in `node:sqlite` with `{ allowExtension: true }`. Zero native dependencies on the critical install path. The only native artifact in the system is the sqlite-vec extension binary, delivered as prebuilt platform packages via optionalDependencies (the esbuild/sharp pattern) — and it's optional (ADR-005).
+`better-sqlite3` ships a bundled SQLite binary compiled with FTS5 enabled, has prebuilds for all major platforms (mac/linux/windows, x64/arm64), uses N-API (ABI-stable across Node versions), and is used by millions of npm packages. It is the correct choice.
 
-**Design rule: no component on the critical install path may require a compiler.**
+**Decision.** `better-sqlite3` as the primary SQLite driver. `sqlite-vec` as a loadable extension for vector storage, delivered as prebuilt platform binaries via `optionalDependencies` (the esbuild/sharp distribution pattern).
 
-**Trade-offs.** Node ≥ 24 excludes users on older Node. Acceptable: our users are Claude Code users, a self-selecting current-tooling population. If telemetry-free feedback proves otherwise, fall back to better-sqlite3 with prebuilds — the storage layer is behind an interface, so the swap is contained.
+**Design rule unchanged: no component on the critical install path may require a compiler.** `better-sqlite3` has prebuilds for current Node LTS. `sqlite-vec` has prebuilds for mac (arm64/x64), linux (x64), windows (x64). Verify linux-arm64 and musl coverage before v0.1 release; keep the JS cosine fallback (ADR-005) as the escape hatch.
 
 **Rejected.**
-- **better-sqlite3 as primary** — compile-on-install failure mode.
-- **LanceDB** — real ANN and good prebuilds, but a second storage system, a much larger binary, and its strengths (millions of vectors) don't apply at our scale.
-- **Chroma / any external vector DB** — a process to manage; claude-mem's heaviest fragility source.
-- **JSON/JSONL files as the store** — no FTS5, no indexed queries, no transactional concurrent writes from parallel hooks.
+- `node:sqlite` — lacks FTS5, the retrieval floor
+- LanceDB — second storage system; strengths don't apply at our scale
+- Chroma — external process, claude-mem's fragility source
+- Graph databases (Kuzu: archived by Apple in October 2025; FalkorDB Lite: v0.3.0, 7 stars, Windows/macOS-x64 gaps) — see ADR-015
 
 ---
 
-### ADR-004: SQLite is the source of truth; Markdown is a first-class export — **Accepted**
+### ADR-004: SQLite is canonical; Markdown is a first-class export — **Accepted**
 
-**Context.** basic-memory inverts this (markdown files as truth, SQLite as index) and is consistently praised for it: users can read and edit their AI's memory, sync it with Obsidian, commit it to git. But files-as-truth forces parsing on every read, makes transactional writes from concurrent hooks hard, and couples the schema to a human-editable format.
+**Context.** basic-memory uses markdown files as source of truth and is praised for it: users can read and edit their AI's memory. But files-as-truth makes concurrent writes from hooks hard and couples the schema to a human-readable format.
 
-**Decision.** The database is canonical. In return, we commit to inspectability as a product feature:
+**Decision.** The database is canonical. Inspectability is a product feature:
 - `agentctx export` renders the full context store as organized Markdown
-- `.agentctx/context.md` (per-project, git-committable) is a continuously maintained export of *team-shareable* context (ADR-012)
+- `.agentctx/context.md` (per-project, git-committable) is a continuously maintained human-readable export of team-shareable context
 - `agentctx show <id>` pretty-prints any record
-- The schema is documented and stable; the DB is queryable with any SQLite client
+- The DB is queryable with any SQLite client
 
-**Trade-offs.** Users can't hand-edit the canonical store in a text editor. Mitigation: `agentctx edit <id>` and round-trip import of the exported markdown for the team-context subset.
-
----
-
-### ADR-005: Hybrid retrieval — FTS5 is the floor, vectors are an enhancement — **Accepted**
-
-**Context.** Two findings converge. (1) Developer queries are keyword-shaped: error strings, function names, flags. BM25 catches `useAuthStore` where a 384-dim embedding whiffs. Practitioners report FTS5 alone carries a surprising share of agent-memory retrieval. (2) Every serious system ended up hybrid (BM25 + vector, fused) — pure vector search has well-documented retrieval misses on code content.
-
-**Decision.** Three-stage retrieval:
-
-1. **FTS5 BM25** (always available, zero dependencies) and **sqlite-vec exact cosine** (when embeddings are enabled), run as parallel top-k queries
-2. **Reciprocal Rank Fusion**, k=60: `score = 1/(60 + rank_fts) + 1/(60 + rank_vec)` — no score calibration needed between BM25 and cosine, single SQL query with CTEs
-3. **Post-fusion rerank**: exponential recency decay (half-life ~30 days) × type weight; **pinned records and active decisions bypass decay entirely**
-
-**Brute-force vector search, no ANN index.** At our scale (hundreds to low tens-of-thousands of chunks per project), exact scan is single-digit milliseconds; the industry crossover where ANN pays for itself is ~100k vectors. sqlite-vec's stable releases are brute-force only anyway (IVF/DiskANN exist only in alphas — verified against the tracking issue, not the marketing). Exact results, zero index maintenance, zero tuning. If a project ever exceeds ~100k chunks, the first lever is int8 quantization with rescoring, not ANN.
-
-**Degradation ladder** (built in from day one — search must never crash):
-1. Full: FTS5 + sqlite-vec + RRF + recency
-2. sqlite-vec extension fails to load (exotic platform): brute-force cosine over BLOB-stored Float32Arrays in JS (~50–150ms at 50k chunks — acceptable)
-3. No embedding model (declined, failed, offline first run): FTS5 BM25 + recency only; responses carry `degraded: "keyword-only"`
-4. FTS5 unavailable (should not happen): LIKE-based search
-
-**Trade-offs.** RRF is rank-based, discarding score magnitudes — occasionally a marginally-relevant FTS hit outranks a strongly-relevant vector hit. Accepted: RRF's calibration-free robustness beats tuned weighted-sum fusion in practice, and the recency/type rerank corrects the worst cases.
+**Trade-offs.** Users can't hand-edit the canonical store in a text editor directly. Mitigation: `agentctx edit <id>` for individual records; round-trip import of the team export for `.agentctx/context.md`.
 
 ---
 
-### ADR-006: Local embeddings via transformers.js; lazy download; keyword-only without it — **Accepted**
+### ADR-005: Hybrid retrieval — FTS5 for real-time; vectors for offline — **Accepted**
 
-**Context.** The no-API-key constraint rules out cloud embeddings. The field has converged on small ONNX models run locally: claude-mem, agentmemory, and mcp-memory-service all use all-MiniLM-L6-v2-class models via transformers.js or ONNX runtime.
+**Context.** Developer queries are keyword-shaped: error strings, function names, flags. BM25 catches `useAuthStore` where embeddings miss. Every serious agent memory system went hybrid (BM25 + vector). But there is a critical constraint (from ADR-006): ONNX model loading takes 2–15s per cold start — every hook invocation is a cold start with no daemon keeping the model warm. Embedding at query time in synchronous hooks is not viable.
 
-**Decision.**
-- **Runtime:** `@huggingface/transformers` v4 (HF-maintained, ONNX under the hood, reliable prebuilds, filesystem model cache, hard offline mode via `allowRemoteModels = false` after first download)
-- **Default model:** `bge-small-en-v1.5` quantized q8 — ~34 MB, 384 dims, ~6 MTEB points better than the all-MiniLM-L6-v2 everyone else defaults to, at nearly identical size and speed. Requires the documented query-side prefix; we own that detail in the embedding layer.
-- **Quality tier (opt-in config):** EmbeddingGemma-300m q4, dims truncated to 256 via Matryoshka — multilingual, best-in-class under 500M params, slower
-- **Download UX:** the npm package ships no model (25–35 MB in a tarball is hostile to every CI install). `agentctx init` offers eager download; otherwise first use triggers it with a one-line notice and progress ("Downloading embedding model (34 MB, one-time) → ~/.agentctx/models"). `--no-embeddings` opts out forever; the tool remains fully functional keyword-only.
-- **When embedding happens:** never at capture time (would require model load per hook invocation — see ADR-002). Batch at `SessionEnd`: one process, one model load, all pending chunks. A `pending_embedding` flag on records makes the backlog explicit and crash-safe.
+**Decision.** Split vector and keyword work by latency tier:
 
-**Trade-offs.** English-centric default (bge-small is English-tuned); the quality tier covers multilingual users. First-search-after-install may run keyword-only until the model lands; the `degraded` field makes this visible rather than silent.
+**Real-time (synchronous hooks, UserPromptSubmit):** FTS5 BM25 only, with recency/type/pinning reranking. This is fast (~1–5ms), has zero model dependency, and degrades to LIKE-based search rather than failing hard. It is the reliable, always-available retrieval path.
 
-**Rejected.** fastembed-js (thin community wrapper, less momentum than transformers.js), node-llama-cpp/GGUF (heaviest option, only justified if we wanted local *generation* — we don't), model2vec static embeddings (~8 MB, ~500x faster, but no official JS implementation; attractive future option for a "instant tier" if we're willing to own a port), bundling the model in the package (install bloat).
+**Offline (background consolidation at SessionEnd):** Full hybrid retrieval with vectors + RRF fusion for:
+- Near-duplicate detection (same-type records with high cosine similarity)
+- Decay scoring and clustering during the "dream" consolidation pass
+- Pre-computing the ranked digest for the next SessionStart
+
+The retrieval pipeline at query time:
+1. FTS5 BM25 top-k on user prompt (records table via FTS5 virtual table)
+2. Recency decay × type weight × pinning filter
+3. Session-scoped dedup (exclude record IDs already injected this session)
+4. Return top-3 records not previously injected
+
+The offline vector pipeline (background, at SessionEnd):
+1. Embed all `pending_embedding` records in batch (one model load, many records)
+2. Run near-duplicate scan within each type: cosine > 0.92 → merge candidates
+3. Update `score` field via access-weighted + recency decay formula
+4. RRF over FTS5 rank + vector rank for the pre-computed SessionStart digest
+
+**Brute-force, no ANN.** At our scale (hundreds to low tens-of-thousands of chunks per project), exact scan is single-digit ms. The industry crossover where ANN pays is ~100k vectors; sqlite-vec's stable releases are brute-force only anyway.
+
+**Degradation ladder:**
+1. FTS5 BM25 + recency reranking (default, real-time)
+2. sqlite-vec unavailable: skip offline vector work; keyword-only remains functional
+3. FTS5 unavailable (should not happen with better-sqlite3): LIKE-based search
+4. All else fails: return pinned records only
 
 ---
 
-### ADR-007: Token budget contract — injection is capped, always — **Accepted**
+### ADR-006: Local embeddings via transformers.js; offline-only use — **Accepted**
 
-**Context.** Injection bloat is the #1 real-world complaint about the category leader: claude-mem's top issues are literally "uses too much tokens" and "~40% of context consumed at session start." Anything injected at SessionStart taxes *every* session, relevant or not. The tools that avoid this share two mechanisms: hard budgets (agentmemory: 2,000 tokens) and progressive disclosure (claude-mem's own search layer, ironically).
+**Context.** The no-API-key constraint rules out cloud embeddings. Small ONNX models run locally are the field's converged answer. However: the ONNX runtime in transformers.js has a cold-start cost of 2–15s for JIT compilation on first load per process. With no daemon (ADR-002), every hook invocation is a new process and every embedding call is a cold start. This makes embedding at query time in synchronous hooks impossible.
 
-**Decision.** A contract, not a guideline:
+**Decision.** Embeddings are **offline-only**: they run during the `SessionEnd` consolidation pass (a background subprocess with no latency constraint) and never in synchronous hooks.
 
-- **SessionStart digest: ≤ 1,500 tokens, hard-capped in code.** Content priority: project profile (~200t) → active pinned decisions (~400t) → last session handover (~400t) → a one-line index of what's queryable via MCP (~100t). Truncation drops from the bottom, never overflows.
-- **MCP retrieval is progressive disclosure:** `ctx_search` returns a compact index (id, type, title, one-line summary — ~50 tokens/result, ~15 results max). Full records only via explicit `ctx_get(ids)`. Claude drills down only into what it needs.
-- **MCP tool count stays small** (≤ ~6 tools). Claude Code defers tool schemas by default, but tool sprawl still costs attention and tokens. One searchable store with typed records beats fifteen specialized tools.
-- **Self-accounting:** every injection and tool response includes its own token estimate in metadata; `agentctx status` reports cumulative injection cost per session. We measure the tax we impose.
+- **Runtime:** `@huggingface/transformers` v4 (HF-maintained, ONNX, filesystem model cache, hard offline mode via `allowRemoteModels = false` after first download)
+- **Default model:** `bge-small-en-v1.5` quantized q8 — ~34 MB, 384 dims. Superior retrieval quality to the all-MiniLM-L6-v2 that most competitors default to, at nearly identical size. Requires the query-side prefix; we own that detail internally.
+- **Quality tier (opt-in config):** EmbeddingGemma-300m q4, dims truncated to 256 via Matryoshka — multilingual, better quality, slower
+- **Download UX:** not bundled in the npm package. `agentctx init` offers eager download; otherwise first `SessionEnd` triggers it with a one-line notice ("Downloading embedding model (34 MB, one-time) → ~/.agentctx/models"). `--no-embeddings` opts out permanently; the tool remains fully functional on FTS5 only.
+- **Pending embedding flag:** every new record has `pending_embedding = 1`. The consolidation pass embeds all pending records in one batch. Crash-safe: any unembedded records are just re-queued on next `SessionEnd`.
 
-**Trade-offs.** A 1,500-token digest will sometimes omit something relevant, and Claude must spend a tool call to fetch it. That is the correct trade: a tool call costs ~100 tokens when needed; an oversized digest costs thousands always.
+**Trade-offs.** Vectors are never used at query time for real-time injection. We accept this: FTS5 handles the query-shaped developer workload well, and the offline consolidation (decay scoring, near-duplicate merging, pre-computed digest ranking) is where vector similarity earns its value.
 
 ---
 
-### ADR-008: Bi-temporal records — supersede, never silently overwrite or accumulate — **Accepted**
+### ADR-007: Injection strategy — dual tier with hard budgets — **Accepted**
 
-**Context.** Project facts change: "we use REST" becomes "we moved to gRPC." Naive stores keep both and retrieval returns the wrong one — the stale-context failure mode. Only two real solutions exist in the field: Mem0's LLM-arbitrated ADD/UPDATE/DELETE/NOOP (requires an API key — disqualified) and Graphiti/Zep's bi-temporal validity intervals (invalidate, don't delete). The latter is a data-model idea, separable from Graphiti's Neo4j-and-LLM machinery.
+**Context.** There are two fundamentally different injection problems. The first is *what should Claude know at the start of a session* — this is answered by stable session-boundary context and is independent of any particular prompt. The second is *what is relevant to this specific question* — this is answered by searching against the user's actual prompt and changes turn-by-turn. These require different mechanisms.
+
+**Decision.** Two injection tiers:
+
+**Tier 1 — SessionStart (stable context, always-on):**
+- Fires once per session (including on resume, with `source: "resume"` — this re-runs correctly)
+- Content: project profile (~200t) + active decisions from the last session + last session handover + a one-line index of what's searchable via MCP + global developer profile preferences
+- Hard cap: **1,500 tokens in code** — truncate from the bottom, never overflow
+- Source: pre-computed digest written at the previous `SessionEnd`, so `SessionStart` reads a file and returns instantly
+- Token composition: `<1,500t total` = project profile (~200t) + recent active decisions (~500t) + last handover (~400t) + MCP index hint (~100t) + developer profile (~200t)
+
+**Tier 2 — UserPromptSubmit (query-aware, per-turn):**
+- Fires on every user message (no matcher support — always fires)
+- Uses FTS5 BM25 search against the actual user prompt (no ONNX — fast, no cold start)
+- **Session-scoped dedup:** track injected record IDs in `/tmp/agentctx-<session_id>.json`; only inject records not already injected this session
+- **Per-turn budget:** top-3 new records, ≤2,000 tokens total
+- Total injection budget: **≤8,000 characters** (Claude Code's additionalContext limit)
+- On session resume: `UserPromptSubmit` replays saved output from transcript (stale). This is acceptable because Tier 1 (SessionStart) carries the time-sensitive content and re-runs correctly.
+
+**Self-accounting:** every injection includes its own token estimate in metadata. `agentctx status` reports cumulative injection cost per session. We measure the tax we impose.
+
+**The 1,500-token rationale.** The correct trade is: a ~150-token tool call to fetch a specific record when needed costs far less than injecting 5,000 tokens of broad context on every session on the chance that some of it is relevant. The MCP progressive disclosure layer (ADR-008) is the complement to this discipline.
+
+---
+
+### ADR-008: MCP tool surface — minimal, progressive disclosure — **Accepted**
+
+**Context.** MCP tool definitions consume context window space even with deferred loading. Tool sprawl — fifteen specialized tools — hurts attention and adds latency. One searchable store with typed records and a small progressive disclosure API beats many specialized tools.
+
+**Decision.** Seven tools maximum in v0.1:
+
+| Tool | Purpose |
+|---|---|
+| `ctx_search(query, type?, file?, scope?)` | FTS5 + recency search → compact index (~50 tokens/result, ≤15 results) |
+| `ctx_get(ids[])` | Full records by ID — the progressive disclosure second step |
+| `ctx_record(type, title, body, supersedes?, scope?)` | Record a decision, convention, or discovery explicitly |
+| `ctx_supersede(old_id, new_body, rationale)` | Mark a fact as no longer current; create the replacing record |
+| `ctx_project()` | Project profile: tech stack, commands, entry points |
+| `ctx_related(file)` | Records linked to a file via entity associations |
+| `ctx_sync_claudemd()` | Return proposed additions/updates to CLAUDE.md based on context store drift |
+
+Progressive disclosure contract: `ctx_search` returns a compact index. Full content only via `ctx_get`. Claude drills down into what it actually needs.
+
+---
+
+### ADR-009: LLM enrichment is ON by default — **Accepted** (full reversal of prior position)
+
+**Context.** A purely deterministic pipeline — SHA-256 dedup, typed extraction from hook payloads, explicit `ctx_record` MCP calls — has a fatal practical flaw: developers don't make explicit `ctx_record` calls. The context store stays mostly empty. Meaningful decisions ("we moved to gRPC," "always use arrow functions in this codebase") happen inside conversation, not as explicit commands. Without LLM extraction, agentctx solves the wrong problem.
+
+The cost concern that motivated the prior "off by default" position was based on incorrect model pricing. Haiku 3.5 was retired February 19, 2026. The current cheap model is **Haiku 4.5** at **$1.00 input / $5.00 output per million tokens** — approximately **$0.015 per typical 10K-token session transcript, ~$0.60/month** for a developer doing two sessions per day. This is a non-cost.
+
+**Decision.** LLM extraction runs by default at session end (Stop hook → background subprocess). Users can turn it off with `agentctx config --no-llm`; this degrades to deterministic capture only.
+
+**Extraction pipeline:**
+
+1. **Trigger:** Stop hook fires, spawns a detached subprocess (`agentctx extract --session-id $ID --transcript $PATH`) and returns immediately. No hook latency.
+2. **Transcript handling:**
+   - ≤15K tokens: single call, full transcript
+   - 15K–50K tokens: first 3K tokens (project context, session setup) + last 17K tokens (current work state)
+   - \>50K tokens: Map-Reduce — 10K-token chunks in parallel, merge with a second synthesis call
+3. **Model:** Haiku 4.5 (quality sufficient for extraction; no frontier reasoning needed)
+4. **Prompt caching:** system prompt (schema + examples + constraints) is prefixed with a cache breakpoint; after the first session in a day, system prompt reads cost 0.1× — saves ~80% of system prompt tokens.
+5. **Output schema (structured JSON):**
+   ```json
+   {
+     "decisions": [{"what": "...", "rationale": "...", "supersedes": null, "confidence": "explicit|inferred"}],
+     "preferences": [{"category": "style|tooling|process|naming", "rule": "...", "confidence": "explicit|inferred", "scope": "project|global"}],
+     "conventions": [{"scope": "file|module|project", "convention": "...", "confidence": "explicit|inferred"}],
+     "active_work": {"current_task": "...", "blockers": [], "next_steps": [], "open_questions": []},
+     "gotchas": [{"pattern": "...", "why_it_matters": "..."}],
+     "flush_ok": false
+   }
+   ```
+6. **FLUSH_OK sentinel:** when the session contains nothing worth persisting (a trivial exchange), the model returns `"flush_ok": true` and extraction writes nothing. Avoids polluting the store with noise.
+7. **Confidence discriminator:** `"explicit"` (developer directly stated it) vs `"inferred"` (pattern observed across multiple choices). Inferred records start with a lower score and require reinforcement across sessions before reaching high confidence. Prevents hallucinated preferences from surfacing as hard facts.
+
+**Extraction quality instructions (key prompt elements):**
+- "Extract ONLY from things the developer said or chose, not from Claude's suggestions."
+- "Do NOT extract: commands Claude ran autonomously, file contents Claude wrote unprompted, routine acknowledgments."
+- "One entry per distinct fact. Do not merge separate decisions into one."
+- "If nothing fits a category, return an empty array — do not invent entries."
+- One concrete few-shot example per output field type.
+
+**Failure modes and mitigations:**
+- *Over-extraction* (most common): mitigated by the explicit negative examples, FLUSH_OK, and confidence scoring
+- *Hallucination* (less common for extraction): mitigated by `confidence: "inferred"` tier, bi-temporal records (wrong facts get superseded)
+- *Missing implicit decisions*: mitigated by asking for inferred entries explicitly when the pattern is clear
+
+---
+
+### ADR-010: Developer profile — global cross-project store — **Accepted**
+
+**Context.** The user identified a key pain point: some context is not project-specific but developer-specific — coding style, process preferences, ways of working. "Always prefers arrow functions" or "writes tests before implementation" applies across every project this developer touches. Existing tools either miss this entirely or conflate it with project context.
+
+**Decision.** A global developer namespace at `~/.agentctx/profile/` (separate from per-project stores), populated by the same extraction pipeline with `scope: "global"` annotation.
+
+**What gets captured as global:**
+- Style preferences (indentation, naming, comment density) — extracted from consistent patterns across sessions
+- Process preferences (TDD, planning-first vs autonomous) — from observed workflow patterns
+- Tooling preferences (test runner, package manager, deploy approach) — from repeated tool choices
+- Cross-cutting conventions (commit message style, PR structure) — from git-adjacent choices
+
+**Accumulation and confidence:** a `scope: "global"` preference extracted from one session gets `confidence: "inferred"`. It upgrades to `confidence: "reinforced"` after appearing consistently across N sessions (configurable, default 3) or one `confidence: "explicit"` statement. Reinforced preferences are injected into every session's SessionStart digest (~200 token budget). Inferred-but-not-reinforced preferences are only injected when directly relevant (UserPromptSubmit FTS5 search).
+
+**Promotion and inspection:** `agentctx profile show` lists the developer's global preferences. `agentctx profile edit <id>` to correct misattributed inferences. `agentctx profile clear <id>` to remove.
+
+---
+
+### ADR-011: Bi-temporal records — supersede, never silently accumulate — **Accepted**
+
+**Context.** Project facts change: "we use REST" → "we moved to gRPC." Naive stores keep both and retrieval returns the wrong one. The two real solutions: Mem0's LLM-arbitrated ADD/UPDATE/DELETE/NOOP (requires API calls mid-session) and Graphiti/Zep's bi-temporal validity intervals. The latter is a data-model idea, separable from Graphiti's Neo4j-and-LLM machinery.
 
 **Decision.** Every context record carries:
-
 ```sql
-valid_from      TEXT NOT NULL,   -- when the fact became true
-recorded_at     TEXT NOT NULL,   -- when we learned it
+valid_from      TEXT NOT NULL,   -- when the fact became true (ISO 8601)
+recorded_at     TEXT NOT NULL,   -- when we ingested it
 superseded_at   TEXT,            -- NULL = currently valid
 superseded_by   TEXT             -- id of the replacing record
 ```
 
-- Default retrieval filters to `superseded_at IS NULL`
-- Superseding is **deterministic, not LLM-judged**: explicit (`agentctx supersede <old> --with <new>`, or the `record_decision` MCP tool with a `supersedes` argument), or rule-based for structured types (a new `metadata.test_command` supersedes the old one by key)
-- History is queryable: "what was our auth approach in March?" works
-- Nothing is deleted by supersession; the consolidation pass (ADR-009) may eventually archive long-superseded records
+- Default retrieval filters `superseded_at IS NULL`
+- Superseding is **deterministic**: explicit (`ctx_supersede` MCP call, or the extraction pipeline's `"supersedes": "<old_id>"` field), or rule-based for structured types (a new `profile.test_command` supersedes the old one by key)
+- History remains queryable: "what was our auth approach in April?" works
+- Nothing is deleted; the consolidation pass may archive records superseded >90 days ago into a cold partition
 
-**Trade-offs.** Without an LLM judge we will miss *implicit* contradictions (two prose decisions that conflict semantically). Accepted for the default pipeline; an opt-in enrichment pass (ADR-011) can flag suspected conflicts for human confirmation. Note that even Mem0's LLM judge is criticized for exactly this, so we are not far behind the state of the art — at zero cost.
+**Trade-offs.** Without an LLM judge we miss implicit contradictions in prose decisions — two decisions that conflict semantically but don't reference each other. The `ctx_sync_claudemd()` MCP tool (ADR-008) addresses this partially: it compares context store decisions against CLAUDE.md and flags likely conflicts for human confirmation.
 
 ---
 
-### ADR-009: Typed records, deterministic capture, offline consolidation — **Accepted**
+### ADR-012: Typed records, deterministic observation capture, offline consolidation — **Accepted**
 
-**Context.** Passive transcript capture stores everything; without typing, dedup, and consolidation, recall surfaces trivia ("noisy memories" — the field's second most common failure). The converged answer is typed observations at capture time plus a background "dream" pass (OpenAI Dreaming, Anthropic Auto Dream, mcp-memory-service's consolidation) — decay, merge, prune as an offline step, not at capture time.
+**Context.** Passive transcript capture without typing accumulates noise; recall surfaces trivia. But purely deterministic capture (only explicit `ctx_record` calls) leaves the store empty. The solution is typed extraction via LLM (ADR-009) at session end, plus lightweight deterministic capture for structured signals during the session.
+
+**Decision.** Two capture paths:
+
+**Path A — LLM extraction (session end, primary):** See ADR-009. Extracts decisions, preferences, conventions, handover state, and gotchas from the full session transcript.
+
+**Path B — Deterministic observation capture (PostToolUse, secondary):** Captures structured signals that don't need LLM interpretation:
+- File writes: entity link (`file_path` → record association)
+- Bash outputs containing error patterns → `bugfix` candidate record (title only; LLM extraction fills rationale)
+- Test run outcomes → pass/fail record linked to the test file entity
+- Git operations: branch switch, commit, PR → session metadata
+
+Path B records are lightweight stubs; the LLM extraction pass enriches them.
+
+**Record types:**
+
+| Type | Capture source | Scope | Decays? |
+|---|---|---|---|
+| `decision` | LLM extraction + explicit `ctx_record` | project | No — only supersession |
+| `convention` | LLM extraction + explicit `ctx_record` | project | No |
+| `preference` | LLM extraction | project \| global | Slow |
+| `discovery` | LLM extraction + PostToolUse observation | project | Yes |
+| `bugfix` | PostToolUse + LLM extraction | project | Yes |
+| `handover` | Stop hook + LLM extraction | project | Fast (one per session, superseded each time) |
+| `profile` | Auto-detected on init + CwdChanged | project | Rule-based refresh |
+
+**Offline consolidation pass (SessionEnd, time-boxed):**
+1. Embed all `pending_embedding` records in batch (one model load)
+2. Near-duplicate scan within each type: cosine similarity > 0.92 → merge candidates, confirm with low-temperature Haiku call
+3. Update `score` field: `score = base_relevance × access_decay × recency_decay × confidence_weight`
+4. Pre-compute the ranked SessionStart digest
+5. Archive records: superseded > 90 days → cold partition; score < 0.1 for > 60 days → candidate for pruning (surfaced in `agentctx status`)
+
+---
+
+### ADR-013: CLAUDE.md staleness detection and sync — **Accepted**
+
+**Context.** CLAUDE.md staleness is one of the three core user pain points explicitly identified: users don't update it; architectural decisions made weeks ago are absent; it drifts from reality. The context store is the ground truth for current decisions — we should use it to detect drift.
 
 **Decision.**
 
-**Record types** (closed set, each with its own injection priority and decay profile):
+**Detection:** After each extraction pass, the consolidation step compares extracted decisions and conventions against the current CLAUDE.md using FTS5 similarity search. When a high-confidence decision or convention in the store has no matching content in CLAUDE.md (or the match is contradicted), flag it as a drift candidate with a `claudemd_drift_score`.
 
-| Type | Source | Decays? |
-|---|---|---|
-| `decision` | explicit MCP tool call, or user command | No (only supersession) |
-| `convention` | explicit, or inferred and confirmed | No |
-| `preference` | user corrections, explicit settings | Slow |
-| `discovery` | PostToolUse capture (how X works, where Y lives) | Yes |
-| `bugfix` | PostToolUse capture (error → resolution pairs) | Yes |
-| `handover` | Stop hook (task state, next steps) | Fast (superseded each session) |
-| `profile` | project metadata detection | Rule-based refresh |
+**Surface:** At the next SessionStart injection, when there are N ≥ 2 drift candidates, include a brief note in the digest: `"2 architectural decisions in the context store are not reflected in CLAUDE.md — run 'agentctx sync' to review."`
 
-**Capture pipeline (deterministic, no LLM):** typed extraction from hook payloads → SHA-256 dedup within a 5-minute window → privacy filter (path-based ignores, secret-pattern scrubbing: API keys, tokens, .env contents) → store with `pending_embedding` flag.
+**Sync:** `agentctx sync` generates a proposed CLAUDE.md diff: additions for missing decisions, ~~strikethrough~~ for content the store considers superseded, and a line for each drift candidate. The user reviews and applies. We never write to CLAUDE.md without explicit user confirmation.
 
-**Entity links without LLM extraction:** for a *coding* context tool, the entities are deterministic — file paths, symbols, package names, branch names — extractable by parsing, not inference. Records link to entities; `ctx_search` can filter by file. (This is where conversational-memory tools need an LLM and we structurally don't.)
+**MCP tool:** `ctx_sync_claudemd()` returns the proposed changes so Claude can assist in applying them interactively.
 
-**Consolidation ("dream") pass** at SessionEnd, time-boxed: embedding backfill → access-based strengthening and Ebbinghaus-style decay scoring (the mcp-memory-service weight vector — time decay, tag relevance, content relevance, access recency — is a proven no-LLM relevance model) → near-duplicate merging (cosine > threshold within same type) → archive of long-dead records.
-
-**Trade-offs.** Deterministic extraction is shallower than LLM extraction — we capture *that* a test command failed and the fix that followed, not a nuanced narrative. Accepted: shallow-but-free and noise-resistant beats rich-but-costly; the structure (types + entities + bi-temporality) recovers most of the value.
+**Trade-offs.** FTS5 similarity is imprecise for detecting semantic coverage — it may flag false positives (decision is in CLAUDE.md but phrased differently). Mitigation: drift detection uses a confidence threshold and only triggers the SessionStart note when there are ≥ 2 candidates, not 1.
 
 ---
 
-### ADR-010: Installation is explicit, reversible, and version-stable — **Accepted**
+### ADR-014: Graph storage — SQLite adjacency tables, no graph DB — **Accepted**
 
-**Context.** agentmemory embeds the package version in hook paths, so every upgrade breaks hooks. npm postinstall scripts that silently edit `~/.claude/settings.json` violate user trust and Claude Code's own consent model (project hooks require workspace trust).
+**Context.** Context records have relationships: decisions supersede each other, conventions apply to specific files/modules, preferences apply globally or per-project. The question is whether to use an embedded graph DB or SQLite with adjacency tables.
+
+**Research findings:**
+- **Kuzu** was acquired by Apple and archived on October 10, 2025. The main repo is read-only. There are community forks (Vela, Ladybug, Bighorn) of uncertain longevity. Do not adopt.
+- **FalkorDB Lite** (embedded FalkorDB for Node) is v0.3.0 with 7 GitHub stars as of June 2026. Too early-stage; Windows support gaps.
+- **AIngram** (a production-patterned local agent memory tool) uses exactly the SQLite + CTE graph + FTS5 + sqlite-vec pattern and reports ~16ms median latency at 1K entries, ~347ms at 100K entries.
+
+**Decision.** SQLite with `nodes` + `edges` adjacency tables, indexed on both endpoints. Graph traversal via `WITH RECURSIVE … UNION` (not `UNION ALL` — `UNION` provides cycle safety at this scale). Depth guard of 5–10 hops on all traversal queries.
+
+**Why this is sufficient.** Our relationship model requires at most 3 hops:
+- Decision supersedes → Decision (1 hop)
+- Convention applies_to → File/Module (1 hop)
+- Preference derives_from → Session (2 hops, rare)
+
+At our scale (<10K nodes typically, <100K at maximum), recursive CTEs in SQLite with proper indexes resolve in well under 10ms. The performance advantage of a graph DB only manifests at hundreds of thousands of nodes and complex multi-hop traversal — the exact workload we don't have.
+
+**Schema (abbreviated):**
+```sql
+CREATE TABLE nodes (
+  id TEXT PRIMARY KEY, project_id TEXT, type TEXT, payload JSON,
+  valid_from TEXT, superseded_at TEXT
+);
+CREATE TABLE edges (
+  id TEXT PRIMARY KEY, from_id TEXT, to_id TEXT,
+  rel_type TEXT  -- supersedes | applies_to | observed_in | derives_from | scope
+);
+CREATE INDEX edges_from ON edges(from_id);
+CREATE INDEX edges_to ON edges(to_id);
+```
+
+**If graph requirements grow:** FalkorDB Lite is the closest embedded option to watch once it matures. The migration from SQLite adjacency tables to FalkorDB Lite is straightforward since the relationship model is simple and well-defined.
+
+---
+
+### ADR-015: Web dashboard — separate package, Hono + Preact + force-graph — **Accepted**
+
+**Context.** The context store spans multiple projects and grows over time. A CLI-only tool makes browsing, editing, and visualizing relationships awkward. A web dashboard is essential for inspectability (a core commitment) and for the future team-context and cloud-sync directions.
 
 **Decision.**
-- No postinstall magic. `agentctx init` is the single explicit setup step: creates `~/.agentctx/`, registers the MCP server (user scope, `claude mcp add`-equivalent), writes hook entries into settings.json
-- Hook commands are **version-independent**: they invoke `agentctx hook <event>` resolved via PATH, never a path into a versioned package directory
-- `agentctx uninstall` removes every trace: hooks, MCP registration, optionally the data directory
-- Settings edits are surgical (parse, modify our keys only, preserve formatting where possible) and idempotent
 
-**Distribution: npm CLI first; Claude Code plugin as a second channel — Provisional.** The plugin system can bundle hooks + MCP + skills and installs via marketplace, which is attractive (it's how claude-mem gets its install ergonomics). But plugins are a packaging layer over the same primitives; the CLI must work standalone first. Revisit at v0.3 once the surface is stable.
+`agentctx ui` starts a local HTTP server and opens the browser. The dashboard is a separate npm package (`@agentctxhq/agentctx-ui`) to keep the base CLI lean. On first `agentctx ui` invocation: prompt "Run `npm install -g @agentctxhq/agentctx-ui` to enable the dashboard."
 
----
+**Stack:**
+- **HTTP server:** `hono` + `@hono/node-server` (~12kB, zero deps, faster than Express)
+- **Frontend:** Preact (~3kB gzipped, React-compatible API) as a pre-built SPA, served as static files
+- **Graph visualization:** `force-graph` by vasturiano (~45kB gz, Canvas-based, framework-agnostic, d3-force under the hood) for the relationship graph view
+- **Build tooling:** esbuild (dev dependency only, not shipped)
+- **Browser open:** `open` npm package
 
-### ADR-011: LLM enrichment exists, is off by default, and is clearly labeled — **Accepted**
+**Architecture:**
+```
+agentctx ui
+  → checks for @agentctxhq/agentctx-ui, prompts if missing
+  → spawns Hono HTTP server on localhost:7327 (configurable)
+  → serves pre-built Preact SPA from package's /dist/
+  → serves /api/* JSON endpoints (reads agentctx.db directly)
+  → opens browser
+```
 
-**Context.** Some genuinely valuable operations need a model: summarizing a long session into a handover narrative, flagging semantically conflicting decisions, distilling a week of discoveries into a convention. claude-mem does this silently via the Agent SDK, burning the user's Claude quota — compounding its token-bloat complaints.
+**Security (local HTTP server):**
+- Bind to `127.0.0.1` only (not `0.0.0.0`)
+- Validate `Host` header: must be `localhost` or `127.0.0.1` — defeats DNS rebinding attacks
+- Check `Sec-Fetch-Site: cross-site` header; reject cross-origin requests — CSRF mitigation
+- Generate a random startup secret token; embed in served HTML; require as header on API writes
+- No cookies; no session state
 
-**Decision.** The default pipeline is 100% deterministic. An optional enrichment mode (off by default) may use the Claude Agent SDK for: handover narrative polish, conflict flagging (ADR-008), consolidation summaries. When enabled it: runs only at session boundaries, reports its token spend in `agentctx status`, and degrades to the deterministic path silently when unavailable. No agentctx feature may *require* enrichment.
+**Dashboard views:**
+- **Projects**: list all projects, last activity, context record counts
+- **Records**: searchable table (FTS5-powered via API) with type/scope filters; edit, pin, supersede
+- **Graph**: force-directed relationship visualization (decisions + supersession chains + file entity links)
+- **Profile**: developer global preferences, confidence levels, edit/remove
+- **Sessions**: session history, token cost, extraction stats
+- **Sync**: CLAUDE.md drift report, proposed sync diff
 
----
-
-### ADR-012: Personal context and team context are separate stores — **Accepted**
-
-**Context.** Market gap: claude-mem is explicitly single-user; Claude Code's native memory is per-machine. Teams want shared architectural decisions; individuals want private preferences. Conflating them is both a privacy bug and a sharing blocker.
-
-**Decision.** Two namespaces with different lifecycles:
-- **Personal** (`~/.agentctx/`): preferences, work style, session handovers, discoveries. Never leaves the machine.
-- **Team** (`.agentctx/` in the repo, git-committable): decisions, conventions, project profile — maintained as human-readable Markdown (the ADR-004 export), diffable in PRs, merged like any text file. The SQLite store *imports* the team file on SessionStart, so teammates' decisions flow into retrieval automatically.
-
-**Trade-offs.** Git-merge conflicts on the team file are possible; the format is line-oriented (one record per block) to keep them tractable. Promotion from personal to team is always explicit (`agentctx promote <id>`), never automatic — privacy by default.
-
----
-
-### ADR-013: Position relative to Claude Code's native memory: beneath it, not against it — **Accepted**
-
-**Context.** Claude Code now ships Auto-Memory: a self-edited `MEMORY.md` (~200-line cap, injected every session) plus an "Auto Dream" background reorganization pass. Reviewers' verdict: "use built-in unless you need semantic search or team sharing." A context tool that fights the native system will lose; one that ignores it will duplicate it.
-
-**Decision.** agentctx is the structured, searchable, versioned layer *beneath* the native 200-line working memory:
-- Native MEMORY.md = small, hot, prose working set (Letta's "memory block" idea, file-shaped)
-- agentctx = the deep store: thousands of typed, bi-temporal, entity-linked, hybrid-searchable records — plus team sharing and cross-machine portability that the native system lacks by design
-- We never write to MEMORY.md uninvited. An opt-in bridge may *suggest* promotions of hot agentctx records into it
-- If native memory grows search or team features, our differentiation narrows to bi-temporal decisions + team git flow + topology — which is the defensible core anyway (see §5)
+**Future:** The server API is designed for future extension to team/cloud sync (add authentication layer, replace local SQLite reads with remote API calls). The frontend doesn't care about storage backend.
 
 ---
 
-## 4. Data Model (v0.1 schema sketch)
+### ADR-016: Installation is explicit, reversible, version-stable — **Accepted**
+
+**Context.** agentmemory embeds the package version in hook paths, so every upgrade breaks hooks. Postinstall scripts that silently edit user config files violate trust.
+
+**Decision.**
+- No postinstall magic. `agentctx init` is the single explicit setup step: creates `~/.agentctx/`, registers the MCP server (`claude mcp add`-equivalent), writes hook entries into `~/.claude/settings.json` (user scope) or `.claude/settings.json` (project scope, user's choice)
+- Hook commands are version-independent: `agentctx hook <event>` resolved via PATH
+- `agentctx uninstall` removes everything: hooks, MCP registration, optionally the data directory
+- Settings edits are surgical (parse → modify our keys only → write back), idempotent, and preserve all other user settings
+
+**Claude Code plugin as second distribution channel.** The plugin system can bundle hooks + MCP and installs via marketplace. This is attractive distribution ergonomics. Implement as a thin wrapper once the CLI surface is stable (v0.3+).
+
+---
+
+## 4. Data Model (v0.1 schema)
 
 ```sql
+-- Core records (typed, bi-temporal)
 CREATE TABLE records (
-  id              TEXT PRIMARY KEY,        -- ulid
-  project_id      TEXT NOT NULL,           -- derived from git remote, else path hash
-  type            TEXT NOT NULL,           -- decision|convention|preference|discovery|bugfix|handover|profile
+  id              TEXT PRIMARY KEY,    -- ulid
+  project_id      TEXT NOT NULL,       -- git-remote hash or path hash
+  type            TEXT NOT NULL,       -- decision|convention|preference|discovery|bugfix|handover|profile
   title           TEXT NOT NULL,
   body            TEXT NOT NULL,
+  scope           TEXT DEFAULT 'project',  -- project | global
   pinned          INTEGER DEFAULT 0,
-  -- bi-temporal (ADR-008)
+  confidence      TEXT DEFAULT 'inferred', -- explicit | inferred | reinforced
+  reinforce_count INTEGER DEFAULT 0,
+  -- bi-temporal (ADR-011)
   valid_from      TEXT NOT NULL,
   recorded_at     TEXT NOT NULL,
   superseded_at   TEXT,
   superseded_by   TEXT REFERENCES records(id),
-  -- retrieval scoring (ADR-009)
+  -- retrieval scoring (ADR-012)
   access_count    INTEGER DEFAULT 0,
   last_accessed   TEXT,
-  score           REAL DEFAULT 1.0,        -- maintained by consolidation pass
+  score           REAL DEFAULT 1.0,
+  -- CLAUDE.md sync (ADR-013)
+  claudemd_drift_score REAL DEFAULT 0.0,
   -- provenance
-  source          TEXT NOT NULL,           -- hook event | mcp tool | cli | import
+  source          TEXT NOT NULL,       -- llm_extraction | hook_observation | mcp_tool | cli | import
   session_id      TEXT,
-  -- embedding lifecycle (ADR-006)
+  -- embedding lifecycle (ADR-005/006)
   pending_embedding INTEGER DEFAULT 1
 );
 
-CREATE TABLE entities (                     -- deterministic: files, symbols, packages
-  id TEXT PRIMARY KEY, project_id TEXT, kind TEXT, name TEXT
+-- Graph adjacency (ADR-014)
+CREATE TABLE nodes (
+  id TEXT PRIMARY KEY, project_id TEXT, kind TEXT,  -- file | symbol | package | module | branch
+  name TEXT UNIQUE
 );
+CREATE TABLE edges (
+  id TEXT PRIMARY KEY,
+  from_id TEXT NOT NULL, to_id TEXT NOT NULL,
+  rel_type TEXT NOT NULL,  -- supersedes | applies_to | observed_in | derives_from | scoped_to
+  weight REAL DEFAULT 1.0
+);
+CREATE INDEX edges_from ON edges(from_id);
+CREATE INDEX edges_to ON edges(to_id);
+
+-- Entity links (records ↔ code entities)
 CREATE TABLE record_entities (record_id TEXT, entity_id TEXT);
 
-CREATE VIRTUAL TABLE records_fts USING fts5(title, body, content=records);
-CREATE VIRTUAL TABLE records_vec USING vec0(  -- when sqlite-vec loads
-  record_id TEXT PRIMARY KEY, embedding float[384]
+-- Session dedup + metadata
+CREATE TABLE sessions (
+  session_id TEXT PRIMARY KEY, project_id TEXT,
+  started_at TEXT, ended_at TEXT,
+  tokens_injected INTEGER DEFAULT 0, extraction_cost_usd REAL DEFAULT 0
 );
+
+-- FTS5 index
+CREATE VIRTUAL TABLE records_fts USING fts5(title, body, content=records, content_rowid=rowid);
+
+-- Vector index (when sqlite-vec loads)
+-- CREATE VIRTUAL TABLE records_vec USING vec0(record_id TEXT PRIMARY KEY, embedding float[384]);
 ```
 
-Chunking policy: records are short and atomic by construction (50–300 tokens) — one decision, one discovery, one handover section. We embed `title + body` whole, prefixed with type/date metadata (`[decision] [2026-06-09]`), which measurably improves typed retrieval. Transcripts are never embedded raw; they are distilled into records at capture time, with the raw text available to FTS5 only where needed for exact-string recall.
+**Chunking policy:** records are short and atomic by construction (50–300 tokens each — one decision, one discovery, one handover section). Embed `[type] [date] [project] title + body` as a prefixed string; the type/date prefix measurably improves typed retrieval.
 
-## 5. MCP Tool Surface (deliberately small — ADR-007)
+---
 
-| Tool | Purpose |
-|---|---|
-| `ctx_search(query, type?, file?)` | Hybrid search → compact index (~50 tokens/result) |
-| `ctx_get(ids)` | Full records by id (progressive disclosure step 2) |
-| `ctx_record(type, title, body, supersedes?)` | Claude records a decision/convention/discovery |
-| `ctx_supersede(old_id, new_id?)` | Mark a fact as no longer current |
-| `ctx_project()` | Project profile + metadata (stack, commands, entry points) |
-| `ctx_related(file)` | Records and entities linked to a file |
+## 5. System Flows
 
-## 6. What Makes This Defensible
+### Session capture flow
+```
+Claude Code session active
+  → user codes, Claude helps
+  → Stop hook fires → agentctx extract (detached subprocess)
+    → reads transcript JSONL from transcript_path
+    → Haiku 4.5 extraction call (async, doesn't block hook return)
+    → writes records to SQLite (decisions, preferences, conventions, handover)
+  → SessionEnd hook fires → agentctx consolidate (detached subprocess)
+    → embed pending records (batch ONNX)
+    → near-duplicate merge pass
+    → score decay update
+    → CLAUDE.md drift scan
+    → pre-compute next SessionStart digest → write digest file
+```
 
-From the competitive analysis, the genuinely unoccupied ground this architecture claims:
+### Session start flow
+```
+New or resumed session
+  → SessionStart hook fires
+  → reads pre-computed digest file (~instant)
+  → returns additionalContext ≤1,500 tokens:
+    {project_profile} + {active_decisions} + {last_handover} + {developer_profile} + {mcp_index_hint}
+  → session begins with full context
+```
 
-1. **Decisions as first-class bi-temporal records, no LLM judge required** — nobody does deterministic supersession
-2. **Claude Code-native depth** — PreCompact capture, transcript JSONL parsing, async hooks, subagent context: surfaces that 22-agent-compatible tools structurally can't go deep on
-3. **The token-budget contract** — the category leader's #1 complaint, solved by design rather than by tuning
-4. **Team context through git** — markdown export, PR-diffable, unserved by every competitor and by native memory
-5. **No infrastructure** — one process at a time, one file, runs forever unattended
+### Per-turn injection flow
+```
+User types a message
+  → UserPromptSubmit hook fires with prompt text
+  → FTS5 BM25 search: SELECT records WHERE body MATCH ? AND superseded_at IS NULL
+  → filter: exclude record_ids already in /tmp/agentctx-<session_id>.json
+  → take top-3, format as additionalContext ≤2,000 tokens
+  → append injected IDs to /tmp/agentctx-<session_id>.json
+  → Claude sees the relevant context alongside the prompt
+```
+
+---
+
+## 6. Defensible Position
+
+From the competitive analysis, the ground this architecture uniquely claims:
+
+1. **Context vs memory** — decisions are first-class bi-temporal records, not log entries; the only tool with deterministic supersession at no LLM cost
+2. **LLM enrichment that's honest about cost** — on by default, but transparent: $0.015/session, reported in `agentctx status`, opt-out with a flag
+3. **Query-aware per-turn injection without a model** — FTS5 search against the actual user prompt; not recency-based blindness, not an extra LLM call per turn
+4. **The token-budget contract** — injection bloat is the category leader's #1 complaint; our 1,500-token cap and per-turn dedup are architectural, not configurable
+5. **CLAUDE.md staleness detection** — addresses the core user pain point (stale files) that no competitor touches
+6. **Developer profile across projects** — cross-project preferences captured by the same extraction pipeline; unserved by every competitor
+7. **No infrastructure** — one process at a time, one file, runs unattended; the opposite of the market
+8. **Local web dashboard** — inspectable, explorable, the surface the team-context and cloud-sync directions need
+
+---
 
 ## 7. Open Questions
 
-- **OQ-1:** Should the `SessionStart` digest adapt per-prompt (move injection to `UserPromptSubmit`, retrieving against the user's actual prompt)? Strictly better relevance, but adds a hook on the critical latency path (30s timeout, fires every turn). Prototype in v0.2; measure latency before committing.
-- **OQ-2:** Worktree semantics — share project context across worktrees of the same repo (Claude Code's native memory does), with handovers scoped per-worktree? Likely yes; decide when implementing `WorktreeCreate` support.
-- **OQ-3:** Windows support level. sqlite-vec ships windows-x64 prebuilds; linux-arm64/musl coverage needs verification. The degradation ladder (JS cosine fallback) means no platform hard-fails — decide what we *test* vs what we *tolerate*.
-- **OQ-4:** Eval story. Nearly all competitor benchmarks are self-reported and none publish reproducible evals. A small public benchmark (seeded repo + scripted sessions + retrieval quality scoring) would differentiate; scope it at v0.4.
+- **OQ-1:** `better-sqlite3` requires prebuilds for each Node major. Test matrix: what happens when a user has Node 25 before prebuilds exist? Does the C++ compile work in typical environments? Decide support matrix at v0.1.
+- **OQ-2:** Haiku 4.5 extraction requires an Anthropic API key. Some users of Claude Code access it via a third-party OAuth path with no direct API key. How do we detect this and degrade gracefully (to deterministic capture only)?
+- **OQ-3:** Worktree semantics — should two worktrees of the same repo share the project context store, with handovers scoped per-worktree? Likely yes (matches Claude Code's own memory behavior). Decide when implementing `WorktreeCreate` support.
+- **OQ-4:** Eval story. A small public benchmark (seeded repo + scripted sessions + extraction quality scoring) would differentiate from the market where all benchmarks are self-reported. Scope for v0.4.
+- **OQ-5:** Cloud sync architecture for team and future paid tier. The web dashboard API is designed for this extension, but the sync protocol, conflict resolution, and auth model are not yet decided. Revisit at v0.5.
