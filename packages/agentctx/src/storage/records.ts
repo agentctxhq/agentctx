@@ -85,7 +85,8 @@ export function insertRecord(db: Database, input: NewRecord): ContextRecord {
   const now = new Date().toISOString();
 
   db.transaction(() => {
-    // Validate the supersession target before writing anything.
+    // Pre-check gives a clear error before the INSERT; markSuperseded re-checks
+    // inside the same transaction as a defensive guard for any future direct callers.
     if (input.supersedes !== undefined) {
       assertSupersedable(db, input.supersedes);
     }

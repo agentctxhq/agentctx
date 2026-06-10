@@ -55,7 +55,7 @@ CREATE TABLE nodes (
   id TEXT PRIMARY KEY,
   project_id TEXT,
   kind TEXT,
-  name TEXT UNIQUE
+  name TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE edges (
@@ -69,7 +69,11 @@ CREATE TABLE edges (
 CREATE INDEX edges_from ON edges(from_id);
 CREATE INDEX edges_to ON edges(to_id);
 
-CREATE TABLE record_entities (record_id TEXT, entity_id TEXT);
+CREATE TABLE record_entities (
+  record_id TEXT NOT NULL REFERENCES records(id),
+  entity_id TEXT NOT NULL REFERENCES nodes(id),
+  PRIMARY KEY (record_id, entity_id)
+);
 
 CREATE TABLE sessions (
   session_id TEXT PRIMARY KEY,
