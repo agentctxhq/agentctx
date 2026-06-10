@@ -1,6 +1,6 @@
 # agentctx Architecture
 
-This document records the architecture of agentctx — the decisions, the reasoning, and the trade-offs accepted. It is the source of truth for technical direction. ROADMAP.md describes *when* things ship; this document describes *what* we are building and *why it is shaped this way*.
+This document records the architecture of agentctx — the decisions, the reasoning, and the trade-offs accepted. It is the source of truth for **why the system is shaped this way**. [VISION.md](./VISION.md) defines why the project exists and its scope boundaries; [SPEC.md](./SPEC.md) is the normative definition of the contracts themselves (data model, hook behavior, MCP tool surface, budgets); [ROADMAP.md](./ROADMAP.md) describes when things ship. When a contract detail here and in SPEC.md disagree, SPEC.md wins and this document gets a correcting PR.
 
 Decisions are recorded ADR-style: context, decision, alternatives considered, trade-offs accepted. Statuses: **Accepted** (build this), **Provisional** (current best answer, revisit at the noted milestone), **Open** (not yet decided).
 
@@ -481,6 +481,8 @@ agentctx ui
 ---
 
 ## 4. Data Model (v0.1 schema)
+
+> The normative copy of this schema lives in [SPEC.md §2](./SPEC.md); this section explains its shape. Change SPEC.md first.
 
 ```sql
 -- Core records (typed, bi-temporal)

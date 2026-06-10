@@ -1,6 +1,6 @@
 # agentctx Roadmap
 
-agentctx is a context layer for Claude Code: structured, persistent, searchable understanding of what you are building — not a log of what happened. This document describes what we ship and in what order. The architectural reasoning lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
+agentctx is a context layer for Claude Code: structured, persistent, searchable understanding of what you are building — not a log of what happened. This document describes what we ship and in what order. The problem and scope boundaries live in [VISION.md](./VISION.md), the normative contracts in [SPEC.md](./SPEC.md), and the architectural reasoning in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
@@ -190,6 +190,8 @@ Seven tools via stdio, registered at user scope:
 | Extraction cost | ~$0.015/session, reported in `agentctx status` | Transparent, not hidden |
 
 ## Non-Goals
+
+These are the headline exclusions; [VISION.md](./VISION.md) is the authoritative list and explains the reasoning behind each.
 
 - Other agents (Cursor, Codex, etc.) — Claude Code-native depth is the differentiator
 - Replacing Claude Code's native memory, CLAUDE.md, or skills — we sit beneath them

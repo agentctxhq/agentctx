@@ -26,7 +26,7 @@ agentctx integrates with Claude Code in two ways:
 
 **As an MCP server** — exposes tools Claude can call to query project context, search architectural decisions, get codebase topology, and more.
 
-**As a hook layer** — installs Claude Code hooks that automatically capture context on `SessionEnd`, inject it on `SessionStart`, and enrich tool calls via `PreToolUse`/`PostToolUse`.
+**As a hook layer** — installs Claude Code hooks that inject a budgeted digest on `SessionStart`, add query-relevant records on `UserPromptSubmit`, capture observations via `PostToolUse`, and run LLM extraction + consolidation when the session ends (`Stop`/`SessionEnd`) — all asynchronously, with no daemon.
 
 Together they give Claude Code a structured, persistent understanding of your project that survives across sessions.
 
@@ -43,9 +43,19 @@ agentctx init
 
 ## Status
 
-This project is in early pre-alpha (`v0.0.1`). The current codebase is a placeholder stub.
+This project is in early pre-alpha (`v0.0.1`). The current codebase is a placeholder stub. Active development is targeting `v0.1`.
 
-Active development is targeting `v0.1`. See [ROADMAP.md](./ROADMAP.md) for the full plan and [ARCHITECTURE.md](./ARCHITECTURE.md) for the technical design and the reasoning behind it.
+---
+
+## Documentation
+
+| Document | Question it answers |
+|---|---|
+| [VISION.md](./VISION.md) | **Why** — the problem, what this is not, what success looks like |
+| [SPEC.md](./SPEC.md) | **What** — normative contracts: context model, hooks, MCP tools, budgets |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | **Why this shape** — every decision, ADR-style, with trade-offs |
+| [ROADMAP.md](./ROADMAP.md) | **When** — milestones from v0.1 to v0.5 |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute |
 
 ---
 

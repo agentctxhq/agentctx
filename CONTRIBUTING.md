@@ -6,6 +6,14 @@ with or without AI tooling, as long as you stand behind what you ship.
 
 ## Before You Start
 
+- Read [VISION.md](./VISION.md) — it defines what this project is and, just as
+  importantly, what it explicitly is not. Feature proposals that conflict with
+  its "What agentctx Is Not" section will be declined; argue for a vision
+  change first if you think the boundary is wrong
+- [SPEC.md](./SPEC.md) is the source of truth for contracts (record types,
+  hook behavior, MCP tools, token budgets); [ARCHITECTURE.md](./ARCHITECTURE.md)
+  records the reasoning. Changes to either require updating the document in
+  the same PR
 - Check open issues before starting work on a new feature or fix
 - For significant changes, open an issue first to discuss the approach
 - Keep PRs focused: one logical change per PR
