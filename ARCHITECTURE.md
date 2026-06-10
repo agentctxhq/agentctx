@@ -482,7 +482,7 @@ agentctx ui
 
 ## 4. Data Model (v0.1 schema)
 
-> The normative copy of this schema lives in [SPEC.md §2](./SPEC.md); this section explains its shape. Change SPEC.md first.
+> The normative copy of this schema lives in [SPEC.md §3](./SPEC.md); this section explains its shape. Change SPEC.md first.
 
 ```sql
 -- Core records (typed, bi-temporal)

@@ -18,13 +18,66 @@ These hold across all milestones. Violating one requires changing this document 
 4. **No compiler on the install path.** Every dependency on the critical install path ships prebuilt binaries for supported platforms. (ADR-003)
 5. **No unconfirmed writes to user-controlled files.** CLAUDE.md, MEMORY.md, `.gitignore`, `~/.claude/settings.json` beyond our own surgical keys — all require explicit user action. (ADR-013, ADR-016)
 6. **Synchronous hooks never load an ONNX model.** Embedding work is offline-only (SessionEnd consolidation). (ADR-006)
-7. **All derived data is rebuildable.** Scores, digests, embeddings, and drift flags can be deleted and regenerated from stored records without information loss (§6).
+7. **All derived data is rebuildable.** Scores, digests, embeddings, and drift flags can be deleted and regenerated from stored records without information loss (§7).
 
 ---
 
-## 2. Context Model
+## 2. Technology Stack and Platform Constraints
 
-### 2.1 Record
+The concrete technical choices, stated normatively. The reasoning and rejected alternatives live in the referenced ADRs in [ARCHITECTURE.md](./ARCHITECTURE.md). Swapping any item below is a spec change.
+
+### 2.1 Stack
+
+| Concern | Choice | Constraint | ADR |
+|---|---|---|---|
+| Runtime | Node.js, current LTS | No Bun, no Deno. Support matrix for new Node majors is OQ-1 | ADR-002 |
+| Package | `@agentctxhq/agentctx`, single CLI binary `agentctx` | No postinstall scripts; setup only via explicit `agentctx init` | ADR-016 |
+| SQLite driver | `better-sqlite3` | Bundled SQLite MUST have FTS5 compiled in; N-API prebuilds for all supported platforms | ADR-003 |
+| Database | Single file `~/.agentctx/agentctx.db`, WAL mode | WAL is required — concurrent async hooks are parallel writers | ADR-002/003 |
+| Vector storage (v0.2) | `sqlite-vec` loadable extension | Delivered as prebuilt platform binaries via `optionalDependencies`; brute-force search only, no ANN | ADR-003/005 |
+| Embedding runtime (v0.2) | `@huggingface/transformers` v4 (ONNX) | Offline-only after first download (`allowRemoteModels = false`); NEVER loaded in synchronous hooks | ADR-006 |
+| Embedding model (v0.2) | `bge-small-en-v1.5` q8 — ~34 MB, 384 dims | Lazy-downloaded to `~/.agentctx/models/`, never bundled in the npm package; query-side prefix handled internally. Opt-in quality tier: EmbeddingGemma-300m q4, truncated to 256 dims | ADR-006 |
+| Extraction model | Claude Haiku 4.5 via the Anthropic API | Detached subprocess only; prompt caching on the system prompt; no API key → degrade per §8 rung 3 | ADR-009 |
+| MCP transport | stdio, registered at user scope | No HTTP/SSE server for MCP (that would be a daemon) | ADR-001/002 |
+| Record IDs | ULID | Sortable by creation time | §3.1 |
+| Graph | SQLite `nodes`/`edges` adjacency tables, recursive CTEs | `WITH RECURSIVE … UNION` (cycle-safe), depth guard 5–10 hops. No graph database | ADR-014 |
+| Dashboard (v0.2) | Separate package `@agentctxhq/agentctx-ui`: Hono + `@hono/node-server`, pre-built Preact SPA, `force-graph`, esbuild (dev-only) | Binds 127.0.0.1 only; Host-header validation; `Sec-Fetch-Site` check; startup secret token. Not a dependency of the base CLI | ADR-015 |
+
+### 2.2 Dependency rules
+
+- The base package targets **zero runtime dependencies beyond `better-sqlite3`** in v0.1; every addition must be justified against an ADR.
+- Native binaries ship as prebuilds, platform-targeted via `optionalDependencies` (the esbuild/sharp pattern). A failed optional install MUST degrade per §8, never fail `npm install`.
+- Forbidden by standing decision: `node:sqlite` (no FTS5), Chroma/LanceDB (second storage system), embedded graph DBs (Kuzu archived; FalkorDB Lite immature), Express (Hono chosen), Docker, anything requiring node-gyp compilation on the install path.
+
+### 2.3 Performance envelope
+
+These numbers are design inputs, not aspirations — they constrain where work is allowed to run:
+
+| Operation | Cost | Consequence |
+|---|---|---|
+| Node process startup | ~50–100 ms | Acceptable per hook invocation; rules out anything heavier at hook time |
+| SQLite FTS5 query | ~1–5 ms after connection open | UserPromptSubmit total target ≤ 150 ms (30 s hook ceiling) |
+| SessionStart | file read of pre-computed digest | Effectively instant; digest is NEVER computed inline |
+| ONNX model cold start | 2–15 s per process | Embeddings are offline-only (Invariant 6) |
+| LLM extraction | seconds, ~$0.015/session | Detached subprocess after Stop; zero hook latency |
+| Vector scan at our scale (<10K records) | single-digit ms brute-force | No ANN index, ever (crossover is ~100K vectors) |
+
+### 2.4 Filesystem layout
+
+```
+~/.agentctx/
+  agentctx.db          # canonical store (SQLite, WAL)
+  profile/             # global developer preference export
+  models/              # embedding model cache (v0.2, lazy-downloaded)
+/tmp/agentctx-<session_id>.json   # per-session injection dedup (derived, disposable)
+<repo>/.agentctx/context.md       # git-committable team export (v0.3, derived)
+```
+
+---
+
+## 3. Context Model
+
+### 3.1 Record
 
 The unit of context is the **record**: typed, atomic (one fact per record, 50–300 tokens), bi-temporal. Canonical storage is SQLite (`~/.agentctx/agentctx.db`, WAL mode); Markdown is a first-class export, never the source of truth (ADR-004).
 
@@ -33,8 +86,8 @@ The normative schema:
 ```sql
 CREATE TABLE records (
   id              TEXT PRIMARY KEY,        -- ulid
-  project_id      TEXT NOT NULL,           -- see §2.4 Namespacing
-  type            TEXT NOT NULL,           -- see §2.2
+  project_id      TEXT NOT NULL,           -- see §3.4 Namespacing
+  type            TEXT NOT NULL,           -- see §3.2
   title           TEXT NOT NULL,
   body            TEXT NOT NULL,
   scope           TEXT DEFAULT 'project',  -- project | global
@@ -46,13 +99,13 @@ CREATE TABLE records (
   recorded_at     TEXT NOT NULL,           -- when we ingested it
   superseded_at   TEXT,                    -- NULL = currently valid
   superseded_by   TEXT REFERENCES records(id),
-  -- retrieval scoring (derived, §6)
+  -- retrieval scoring (derived, §7)
   access_count    INTEGER DEFAULT 0,
   last_accessed   TEXT,
   score           REAL DEFAULT 1.0,
-  -- CLAUDE.md sync (derived, §6)
+  -- CLAUDE.md sync (derived, §7)
   claudemd_drift_score REAL DEFAULT 0.0,
-  -- provenance (§6)
+  -- provenance (§7)
   source          TEXT NOT NULL,           -- llm_extraction | hook_observation | mcp_tool | cli | import
   session_id      TEXT,
   -- embedding lifecycle
@@ -87,7 +140,7 @@ CREATE TABLE sessions (
 -- v0.2+: CREATE VIRTUAL TABLE records_vec USING vec0(record_id TEXT PRIMARY KEY, embedding float[384]);
 ```
 
-### 2.2 Record types
+### 3.2 Record types
 
 Seven types. Adding a type is a spec change, not an implementation detail.
 
@@ -95,13 +148,13 @@ Seven types. Adding a type is a spec change, not an implementation detail.
 |---|---|---|---|---|
 | `decision` | An architectural or technical choice, with rationale | LLM extraction, `ctx_record` | project | Never decays; superseded explicitly |
 | `convention` | A rule about how code is written in this project | LLM extraction, `ctx_record` | project | Never decays; superseded explicitly |
-| `preference` | How this developer works (style, process, tooling) | LLM extraction | project \| global | Slow decay; confidence lifecycle (§2.3) |
+| `preference` | How this developer works (style, process, tooling) | LLM extraction | project \| global | Slow decay; confidence lifecycle (§3.3) |
 | `discovery` | Something learned about the codebase or its behavior | LLM extraction, PostToolUse | project | Decays |
 | `bugfix` | A bug, its cause, and its fix | PostToolUse stub + LLM enrichment | project | Decays |
 | `handover` | Active task, blockers, next steps at session end | Stop hook + LLM extraction | project | One current per project; each new one supersedes the last |
 | `profile` | Project metadata: stack, commands, entry points | Auto-detected at init / cwd change | project | Rule-based refresh by key |
 
-### 2.3 Confidence lifecycle
+### 3.3 Confidence lifecycle
 
 `confidence` is a trust discriminator on every record:
 
@@ -111,13 +164,13 @@ Seven types. Adding a type is a spec change, not an implementation detail.
 
 Transitions are one-way: `inferred → reinforced` (via `reinforce_count`), or any → superseded. There is no downgrade; a wrong record is superseded or deleted, not demoted.
 
-### 2.4 Namespacing
+### 3.4 Namespacing
 
 - `project_id` = SHA-256 of the normalized git remote URL (origin, lowercased, credentials and `.git` suffix stripped, `git@host:path` and `https://host/path` forms unified). Fallback when no remote: SHA-256 of the absolute repo root path. Two clones of the same repo on one machine therefore share a namespace; a fork with a different remote does not.
 - Global developer profile lives in the same database with `scope = 'global'` and a reserved `project_id = '_global'`; surfaced at `~/.agentctx/profile/` via export.
 - Cross-project reads are forbidden except for `scope = 'global'` records. A project's retrieval MUST only see its own namespace plus the global namespace.
 
-### 2.5 Supersession semantics
+### 3.5 Supersession semantics
 
 - Superseding sets `superseded_at` (timestamp) and `superseded_by` (new record id) on the old record, and creates the new record with `valid_from = now`. Nothing is ever deleted by supersession.
 - Supersession is **deterministic**: an explicit `ctx_supersede` call, the extraction pipeline's `supersedes` field, or rule-based for keyed types (`handover` per project; `profile` per key). There is no LLM arbitration pass at read or write time.
@@ -125,7 +178,7 @@ Transitions are one-way: `inferred → reinforced` (via `reinforce_count`), or a
 
 ---
 
-## 3. Hook Contract
+## 4. Hook Contract
 
 agentctx registers these Claude Code hooks at `agentctx init`. All hook commands are PATH-resolved (`agentctx hook <event>`), never version-pinned paths (ADR-016).
 
@@ -135,7 +188,7 @@ agentctx registers these Claude Code hooks at `agentctx init`. All hook commands
 | `UserPromptSubmit` | Yes (30s hook timeout; target ≤ 150ms) | ≤ 2,000 tokens/turn, top-3 records, total `additionalContext` ≤ 8,000 chars | FTS5 BM25 search on the literal prompt text → recency/type/pinning rerank → exclude IDs already injected this session → inject, then append injected IDs to the session dedup file. |
 | `Stop` | Returns immediately | none | Spawn detached `agentctx extract --session-id <id> --transcript <path>`; do not wait. |
 | `PreCompact` | Yes | minimal | Snapshot active working state (current handover candidate) before compaction destroys it. |
-| `PostToolUse` | Async | none | Deterministic observation capture only (§6): entity links, error-pattern stubs, test outcomes, git ops. MUST NOT call an LLM or load a model. |
+| `PostToolUse` | Async | none | Deterministic observation capture only (§7): entity links, error-pattern stubs, test outcomes, git ops. MUST NOT call an LLM or load a model. |
 | `SessionEnd` | Async | none | Spawn detached `agentctx consolidate`: embedding backfill (v0.2), dedup scan, score update, CLAUDE.md drift scan, pre-compute the next SessionStart digest. |
 
 Session-scoped dedup state lives at `/tmp/agentctx-<session_id>.json` (injected record IDs). Losing this file degrades gracefully: worst case is re-injection, never an error.
@@ -144,27 +197,27 @@ Session-scoped dedup state lives at `/tmp/agentctx-<session_id>.json` (injected 
 
 ---
 
-## 4. MCP Server Contract
+## 5. MCP Server Contract
 
 Seven tools over stdio, registered at user scope. This is a hard cap in v0.1: adding a tool is a spec change. The contract is **progressive disclosure**: search returns a compact index; full content only by explicit `ctx_get`. No tool may bulk-return the store.
 
-All tools MUST filter superseded records by default and MUST scope reads per §2.4. Errors return a structured `{error: string, degraded?: string}` — never throw raw exceptions into the MCP channel.
+All tools MUST filter superseded records by default and MUST scope reads per §3.4. Errors return a structured `{error: string, degraded?: string}` — never throw raw exceptions into the MCP channel.
 
 ### `ctx_search(query, type?, file?, scope?, limit?)`
-- `query` string, required. `type` one of §2.2. `scope`: `project` (default: project + global), `global`. `limit` ≤ 15, default 10.
+- `query` string, required. `type` one of §3.2. `scope`: `project` (default: project + global), `global`. `limit` ≤ 15, default 10.
 - Returns a compact index, ≤ 50 tokens per result: `{id, type, title, age, confidence, score}`.
-- Engine: FTS5 BM25 + recency/type/pinning rerank. When FTS5 is unavailable the response includes `degraded: "like-search"` (§7).
+- Engine: FTS5 BM25 + recency/type/pinning rerank. When FTS5 is unavailable the response includes `degraded: "like-search"` (§8).
 - MUST NOT return record bodies.
 
 ### `ctx_get(ids[])`
 - ≤ 10 ids per call. Returns full records including bi-temporal fields and provenance.
-- Side effect: increments `access_count`, sets `last_accessed` (feeds derived scoring, §6).
+- Side effect: increments `access_count`, sets `last_accessed` (feeds derived scoring, §7).
 - Unknown ids are returned in a `missing` array, not an error.
 
 ### `ctx_record(type, title, body, supersedes?, scope?)`
 - Explicit capture. Writes with `source = 'mcp_tool'`, `confidence = 'explicit'`, `valid_from = recorded_at = now`.
-- `supersedes` (record id) applies §2.5 semantics atomically with the insert.
-- Validation: `type` must be one of §2.2; `title` ≤ 120 chars; `body` ≤ 2,000 chars (atomicity by construction).
+- `supersedes` (record id) applies §3.5 semantics atomically with the insert.
+- Validation: `type` must be one of §3.2; `title` ≤ 120 chars; `body` ≤ 2,000 chars (atomicity by construction).
 
 ### `ctx_supersede(old_id, new_body, rationale)`
 - Marks `old_id` superseded and creates the replacing record (same type/scope as the old one, `confidence = 'explicit'`). Returns both ids.
@@ -182,7 +235,7 @@ All tools MUST filter superseded records by default and MUST scope reads per §2
 
 ---
 
-## 5. Extraction Contract (LLM, ON by default)
+## 6. Extraction Contract (LLM, ON by default)
 
 Runs out-of-band (Stop → detached subprocess), Haiku-tier model, ~$0.015/session (ADR-009). Opt-out: `agentctx config --no-llm` → deterministic capture only.
 
@@ -209,7 +262,7 @@ Runs out-of-band (Stop → detached subprocess), Haiku-tier model, ~$0.015/sessi
 
 ---
 
-## 6. Stored vs Inferred vs Derived
+## 7. Stored vs Inferred vs Derived
 
 This three-way distinction settles most debates about where logic belongs.
 
@@ -234,7 +287,7 @@ Rule of thumb: if it can be recomputed from stored records, it is derived and MU
 
 ---
 
-## 7. Degradation Ladder
+## 8. Degradation Ladder
 
 Every layer of the retrieval stack has a defined fallback. The tool MUST remain functional at every rung, and responses below rung 1 carry a `degraded` marker.
 
@@ -246,7 +299,7 @@ Every layer of the retrieval stack has a defined fallback. The tool MUST remain 
 
 ---
 
-## 8. Token Budget Summary (normative)
+## 9. Token Budget Summary (normative)
 
 | Surface | Budget | Enforcement |
 |---|---|---|
@@ -258,7 +311,7 @@ Every layer of the retrieval stack has a defined fallback. The tool MUST remain 
 
 ---
 
-## 9. Changing This Spec
+## 10. Changing This Spec
 
 - Contract changes (record types, tool signatures, budgets, invariants) require: an issue, a PR updating this document **and** the relevant ADR in ARCHITECTURE.md, then the implementation.
 - This document describes the current target surface; ARCHITECTURE.md preserves the decision history that got us here. Keep rationale out of this file — link the ADR instead.
