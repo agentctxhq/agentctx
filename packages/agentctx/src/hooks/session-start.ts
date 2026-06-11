@@ -52,13 +52,8 @@ function profileOnlyFallback(env: HookEnv, projectId: string): string {
       if (profiles.length === 0) {
         return "";
       }
-      const lines = profiles
-        .filter((r) => r.projectId === projectId)
-        .map((r) => `- ${r.title}: ${r.body}`)
-        .reverse(); // listRecords is newest-first; keep detection order (Stack, Commands, …)
-      if (lines.length === 0) {
-        return "";
-      }
+      // listRecords is newest-first; reverse keeps detection order (Stack, Commands, …).
+      const lines = profiles.map((r) => `- ${r.title}: ${r.body}`).reverse();
       const text = `Project profile (agentctx):\n${lines.join("\n")}`;
       return truncateToTokens(text, FALLBACK_PROFILE_MAX_TOKENS);
     } finally {

@@ -55,6 +55,13 @@ describe("hook post-tool-use", () => {
     ]);
   });
 
+  it("does not mistake git flags or pathspec separators for branch names", async () => {
+    await t.run("post-tool-use", bash("git checkout -- src/app.ts", ""));
+    await t.run("post-tool-use", bash("git checkout -f main", ""));
+    await t.run("post-tool-use", bash("git switch --track origin/dev", ""));
+    expect(nodes()).toEqual([]);
+  });
+
   it("captures a test failure as a deduplicated bugfix stub with a file entity link", async () => {
     const failure = {
       stdout: "FAIL test/auth.test.ts > login\nAssertionError: expected 401 to be 200",

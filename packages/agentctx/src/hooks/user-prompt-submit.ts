@@ -98,7 +98,9 @@ export function formatInjection(
     const block = `\n\n[${hit.record.type}] ${hit.record.title}${marker}\n${hit.record.body}`;
     const candidate = text + block;
     if (candidate.length > maxChars || estimateTokens(candidate) > maxTokens) {
-      break;
+      // Skip, don't stop: a lower-ranked record may still fit the remaining
+      // budget (SPEC §9 drops by rank, not by position in the loop).
+      continue;
     }
     text = candidate;
     ids.push(hit.record.id);
