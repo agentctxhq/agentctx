@@ -190,6 +190,13 @@ describe("formatInjection budget enforcement", () => {
     expect(estimateTokens(result.text)).toBeLessThanOrEqual(250);
   });
 
+  it("skips an oversized higher-ranked record and still injects lower-ranked ones", () => {
+    const hits = [hit("a", 2000), hit("b", 100), hit("c", 100)];
+    const result = formatInjection(hits, 2000, 400);
+    expect(result.ids).toEqual(["b", "c"]);
+    expect(result.text.length).toBeLessThanOrEqual(400);
+  });
+
   it("returns empty when nothing fits", () => {
     const result = formatInjection([hit("a", 500)], 10, 8000);
     expect(result).toEqual({ text: "", ids: [], tokens: 0 });

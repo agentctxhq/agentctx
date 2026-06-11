@@ -80,8 +80,10 @@ function captureBash(db: Database, projectId: string, payload: HookPayload): voi
   }
   const output = responseText(payload.toolResponse);
 
+  // Reject flag-like captures (`--`, `-f`, `--track`): `git checkout -- <path>`
+  // and friends are not branch switches.
   const branch = GIT_BRANCH_RE.exec(command.trim());
-  if (branch?.[1] !== undefined && branch[1] !== "-") {
+  if (branch?.[1] !== undefined && !branch[1].startsWith("-")) {
     upsertNode(db, projectId, "branch", branch[1]);
     return;
   }
