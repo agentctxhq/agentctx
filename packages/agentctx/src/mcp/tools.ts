@@ -173,7 +173,7 @@ function ctxRecord(ctx: ToolContext, args: Record<string, unknown>): unknown {
   const projectId = scope === "global" ? GLOBAL_PROJECT_ID : ctx.projectId;
 
   if (supersedes !== undefined) {
-    assertVisibleHead(ctx, supersedes);
+    assertVisibleHead(ctx, supersedes, projectId);
   }
 
   const created = insertRecord(ctx.db, {
@@ -474,11 +474,28 @@ function visibleToProject(record: ContextRecord, projectId: string): boolean {
   );
 }
 
-/** Heads only: a supersedes target must exist, be visible, and be current. */
-function assertVisibleHead(ctx: ToolContext, id: string): void {
+/**
+ * A supersedes target must exist, be visible, be current, and live in the
+ * same namespace as its replacement — a project-scoped record must never
+ * supersede a global one (it would soft-delete the global record for every
+ * project while the replacement stays local), and vice versa.
+ */
+function assertVisibleHead(ctx: ToolContext, id: string, targetNamespace: string): void {
   const record = getRecord(ctx.db, id, { includeSuperseded: true });
   if (record === null || !visibleToProject(record, ctx.projectId)) {
     throw new McpToolError(`supersedes: no record with id ${id} in this project`);
+  }
+  if (record.supersededAt !== null) {
+    throw new McpToolError(
+      `supersedes: record ${id} is already superseded by ${record.supersededBy ?? "unknown"}; supersede the current head instead`,
+    );
+  }
+  if (record.projectId !== targetNamespace) {
+    throw new McpToolError(
+      record.projectId === GLOBAL_PROJECT_ID
+        ? `supersedes: record ${id} is a global record; pass scope: "global" to supersede it`
+        : `supersedes: record ${id} is project-scoped; it cannot be superseded by a global record`,
+    );
   }
 }
 
