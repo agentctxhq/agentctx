@@ -2,8 +2,8 @@
  * SessionStart hook (SPEC §4, ADR-007 Tier 1): read the pre-computed digest
  * file and emit it as `additionalContext`, hard-capped at 1,500 tokens.
  *
- * The digest is NEVER computed inline — `agentctx consolidate` (issue 4/7)
- * writes it at SessionEnd. Before the first consolidation pass runs, the
+ * The digest is NEVER computed inline — `agentctx consolidate` writes it at
+ * SessionEnd. Before the first consolidation pass runs, the
  * issue 3/7 contract allows a minimal profile-only digest: a single indexed
  * read of the keyed `profile` records, not a digest computation.
  *

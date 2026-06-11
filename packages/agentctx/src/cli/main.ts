@@ -21,6 +21,8 @@ Commands:
   uninstall    remove hooks and MCP registration (add --data to delete stored context)
   config       get/set settings (llm, embeddings, modelTier, reinforceThreshold)
   reset        delete the current project's context records (asks first)
+  extract      LLM extraction from a session transcript (spawned by the Stop hook)
+  consolidate  offline pass: confidence lifecycle, scores, SessionStart digest
   hook <event> hook dispatcher invoked by Claude Code (not for direct use)
 
 Run any command with --help semantics via the docs:
@@ -50,6 +52,10 @@ export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<
         return await (await import("./config-cmd.js")).runConfig(env, args);
       case "reset":
         return await (await import("./reset.js")).runReset(env, args);
+      case "extract":
+        return await (await import("../extract/run.js")).runExtract(env, args);
+      case "consolidate":
+        return await (await import("../consolidate/run.js")).runConsolidate(env, args);
       case "hook":
         // Real dispatch happens in cli.ts (hooks/runner.js) before this
         // module ever loads, with its own swallow-everything error policy.

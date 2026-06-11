@@ -6,10 +6,6 @@
  * - SessionEnd → mark the session ended, drop the dedup file, spawn
  *                `agentctx consolidate` detached
  * - CwdChanged → switch the session's active project namespace
- *
- * The `extract` and `consolidate` subcommands land in issue 4/7; until then
- * the detached child exits non-zero in the background, which is invisible
- * to the session by construction (detached, stdio ignored).
  */
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
