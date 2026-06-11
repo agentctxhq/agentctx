@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -387,10 +387,7 @@ describe("consolidate drift integration", () => {
     const { resolveProjectId } = await import("../../src/storage/namespace.js");
     const cwdProjectId = resolveProjectId(t.env.cwd);
 
-    writeFileSync(
-      join(t.env.cwd, "CLAUDE.md"),
-      "# Project\n\nWe use TypeScript and npm.",
-    );
+    writeFileSync(join(t.env.cwd, "CLAUDE.md"), "# Project\n\nWe use TypeScript and npm.");
 
     // Seed directly to the cwd project id
     const db = openDatabase(t.env.dbPath);
