@@ -183,7 +183,9 @@ export function buildSyncReport(db: Database, projectId: string, cwd: string): S
   }
   const claudeTokens = tokenizeText(claudeContent);
 
-  // missing: active non-inferred decisions/conventions with high drift score
+  // missing: active non-inferred decisions/conventions with high drift score.
+  // LIMIT 100 avoids unbounded payloads; in practice v0.1 stores far fewer
+  // than 100 non-inferred decisions/conventions per project.
   const activeRows = db
     .prepare(
       `SELECT * FROM records
@@ -192,7 +194,7 @@ export function buildSyncReport(db: Database, projectId: string, cwd: string): S
          AND type IN ('decision', 'convention')
          AND confidence != 'inferred'
        ORDER BY type, score DESC
-       LIMIT 20`,
+       LIMIT 100`,
     )
     .all({ projectId }) as Array<Parameters<typeof rowToRecord>[0]>;
 
@@ -217,9 +219,16 @@ export function buildSyncReport(db: Database, projectId: string, cwd: string): S
 
   const contradicted: ContradictedEntry[] = [];
   for (const row of supersededRows) {
-    // Low drift score on a superseded record = its title tokens are still in
-    // CLAUDE.md even though the store considers the fact outdated.
-    if (computeDriftScore(row.title, claudeTokens) < CONTRADICTED_COVERAGE_THRESHOLD) {
+    // A title with < MIN_TOKENS_FOR_DRIFT significant tokens cannot produce a
+    // meaningful coverage signal: computeDriftScore returns 0, which satisfies
+    // the < threshold check even when the record is not in CLAUDE.md at all.
+    // Skip those to avoid false positives.
+    const titleTokens = [...tokenizeText(row.title, TITLE_MIN_TOKEN_LEN)];
+    if (titleTokens.length < MIN_TOKENS_FOR_DRIFT) continue;
+    // matched/total > 1 - threshold means more than half the tokens are in
+    // CLAUDE.md → the superseded fact still appears there.
+    const matched = titleTokens.filter((t) => claudeTokens.has(t)).length;
+    if (matched / titleTokens.length > 1 - CONTRADICTED_COVERAGE_THRESHOLD) {
       contradicted.push({
         id: row.id,
         type: row.type,

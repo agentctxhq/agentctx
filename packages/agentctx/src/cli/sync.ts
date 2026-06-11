@@ -73,9 +73,16 @@ export async function runSync(env: CliEnv, args: string[]): Promise<number> {
 
   // Append only the 'missing' additions. Removals require human judgment and
   // are shown for review only — never automatically stripped (Invariant 5).
-  const existing = readFileSync(claudeMdPath, "utf8");
-  const appendContent = buildAdditionsBlock(report.missing);
-  writeFileSync(claudeMdPath, `${existing.trimEnd()}\n\n${appendContent}\n`, "utf8");
+  try {
+    const existing = readFileSync(claudeMdPath, "utf8");
+    const appendContent = buildAdditionsBlock(report.missing);
+    writeFileSync(claudeMdPath, `${existing.trimEnd()}\n\n${appendContent}\n`, "utf8");
+  } catch (err) {
+    env.io.err(
+      `failed to write ${claudeMdPath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return 1;
+  }
   env.io.out(`✓ appended ${report.missing.length} record(s) to ${claudeMdPath}`);
 
   return 0;

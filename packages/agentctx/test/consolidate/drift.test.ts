@@ -316,6 +316,19 @@ describe("buildSyncReport", () => {
     expect(report.missing).toHaveLength(0);
     expect(report.contradicted).toHaveLength(0);
   });
+
+  it("does not flag short-token superseded titles as contradicted (regression: score=0 ambiguity)", () => {
+    // "Use API" → title tokens (minLen=4): [] or ["api"] — fewer than MIN_TOKENS_FOR_DRIFT.
+    // computeDriftScore returns 0 (not enough tokens), which must NOT be treated
+    // as "fully covered" and erroneously added to contradicted.
+    writeFileSync(join(cwd, "CLAUDE.md"), "# Project\n\nWe use React and Tailwind.");
+    const old = seed({ title: "Use API", body: "REST API endpoints" });
+    seed({ title: "Use gRPC", body: "Migrated to gRPC", supersedes: old.id });
+
+    const report = buildSyncReport(tmp.db, PROJECT, cwd);
+    // "Use API" has < 2 significant (4+ char) tokens — must be skipped, not contradicted
+    expect(report.contradicted.some((e) => e.title === "Use API")).toBe(false);
+  });
 });
 
 // --- integration: consolidate triggers drift scan and digest hint ------------
