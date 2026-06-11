@@ -5,7 +5,7 @@
  * own keys, and write back — and if a file does not parse as a JSON object,
  * we refuse to touch it rather than risk clobbering user configuration.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type SettingsErrorCode = "parse_failed" | "unexpected_shape";
@@ -78,5 +78,14 @@ export function writeJsonObject(path: string, value: JsonObject): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmpPath = `${path}.agentctx-tmp-${process.pid}`;
   writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(tmpPath, path);
+  try {
+    renameSync(tmpPath, path);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* ignore cleanup error */
+    }
+    throw error;
+  }
 }

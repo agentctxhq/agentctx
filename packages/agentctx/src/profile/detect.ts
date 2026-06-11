@@ -125,9 +125,7 @@ export function refreshProjectProfile(
   entries: ProfileEntry[],
 ): ProfileRefreshResult {
   const current = new Map(
-    listRecords(db, projectId, { type: "profile" })
-      .filter((record) => record.projectId === projectId)
-      .map((record) => [record.title, record.body]),
+    listRecords(db, projectId, { type: "profile" }).map((record) => [record.title, record.body]),
   );
 
   const result: ProfileRefreshResult = { created: [], refreshed: [], unchanged: [] };

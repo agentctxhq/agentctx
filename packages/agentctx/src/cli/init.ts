@@ -24,6 +24,10 @@ Options:
   --no-profile  skip project profile detection`;
 
 export async function runInit(env: CliEnv, args: string[]): Promise<number> {
+  if (args.includes("--help")) {
+    env.io.out(INIT_USAGE);
+    return 0;
+  }
   // No `allowNegative` — it needs Node 22+, we support ≥20.
   const { values } = parseArgs({
     args,

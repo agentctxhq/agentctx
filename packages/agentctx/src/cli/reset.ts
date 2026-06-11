@@ -20,6 +20,10 @@ Options:
   --force   skip the confirmation prompt (required without a TTY)`;
 
 export async function runReset(env: CliEnv, args: string[]): Promise<number> {
+  if (args.includes("--help")) {
+    env.io.out(RESET_USAGE);
+    return 0;
+  }
   const { values } = parseArgs({
     args,
     options: {
