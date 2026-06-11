@@ -3,7 +3,7 @@
  * (SPEC §4, ADR-007).
  *
  * The digest is derived data (SPEC §7), pre-computed at SessionEnd by
- * `agentctx consolidate` (issue 4/7) and only *read* at SessionStart —
+ * `agentctx consolidate` and only *read* at SessionStart —
  * never computed inline. This module owns the contract both sides share.
  */
 import { readFileSync } from "node:fs";
