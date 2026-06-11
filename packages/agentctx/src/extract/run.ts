@@ -90,6 +90,9 @@ async function extract(
   let responseText: string;
 
   if (input.mode === "map-reduce") {
+    // Known v0.1 limitation: if any parallel chunk call fails, the whole
+    // extraction is abandoned and the cost of the chunks that did complete
+    // is not recorded in sessions.extraction_cost_usd.
     const chunkResponses = await Promise.all(
       input.chunks.map((chunk) =>
         requestCompletion(deps.fetchFn, deps.apiKey as string, EXTRACTION_SYSTEM_PROMPT, chunk),

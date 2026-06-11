@@ -108,6 +108,11 @@ export function writeDigest(
   writeJsonObject(digestFilePath(agentctxHome, projectId), { ...digest });
 }
 
+/**
+ * `filter` and `order` are interpolated into the SQL — they MUST be
+ * compile-time literals owned by this module, never user input or any
+ * value read from the database.
+ */
 function currentRecords(
   db: Database,
   projectId: string,

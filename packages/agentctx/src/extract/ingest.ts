@@ -133,6 +133,9 @@ function ingestCandidate(
 ): void {
   if (candidate.body.length > BODY_MAX_CHARS) {
     stats.dropped++; // oversized entries are dropped, not truncated (SPEC §6)
+    log(
+      `ingest: dropped oversized ${candidate.type} entry (${candidate.body.length} chars > ${BODY_MAX_CHARS} limit)`,
+    );
     return;
   }
   const targetProjectId = candidate.scope === "global" ? GLOBAL_PROJECT_ID : projectId;
