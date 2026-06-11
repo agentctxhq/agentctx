@@ -7,7 +7,7 @@
  * silently or without confirmation.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { buildSyncReport, findClaudeMd, type DriftEntry } from "../consolidate/drift.js";
+import { type DriftEntry, buildSyncReport, findClaudeMd } from "../consolidate/drift.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import type { CliEnv } from "./env.js";
@@ -42,7 +42,7 @@ export async function runSync(env: CliEnv, args: string[]): Promise<number> {
 
   const projectId = resolveProjectId(env.cwd);
   const db = openDatabase(env.dbPath);
-  let report;
+  let report: ReturnType<typeof buildSyncReport>;
   try {
     report = buildSyncReport(db, projectId, env.cwd);
   } finally {

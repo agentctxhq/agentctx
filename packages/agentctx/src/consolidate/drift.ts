@@ -16,7 +16,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "better-sqlite3";
-import { rowToRecord } from "../storage/records.js";
+import type { rowToRecord } from "../storage/records.js";
 
 /** Score >= this threshold: the record is a drift candidate. */
 export const DRIFT_CANDIDATE_THRESHOLD = 0.7;
