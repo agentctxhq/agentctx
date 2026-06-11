@@ -194,7 +194,7 @@ agentctx registers these Claude Code hooks at `agentctx init`. All hook commands
 
 Session-scoped dedup state lives at `/tmp/agentctx-<session_id>.json` (injected record IDs). Losing this file degrades gracefully: worst case is re-injection, never an error.
 
-**Digest composition (SessionStart, ≤ 1,500 tokens total):** project profile ~200t + active decisions ~500t + last handover ~400t + reinforced global preferences ~200t + MCP index hint ~100t. Truncate from the bottom of this list, never overflow.
+**Digest composition (SessionStart, ≤ 1,500 tokens total):** project profile ~200t + active decisions ~500t + last handover ~400t + reinforced global preferences ~200t + MCP index hint ~100t + CLAUDE.md drift hint ~60t (omitted when < 2 drift candidates). Truncate from the bottom of this list, never overflow.
 
 ---
 
@@ -309,6 +309,7 @@ Every layer of the retrieval stack has a defined fallback. The tool MUST remain 
 | `ctx_search` result | ≤ 50 tokens/result, ≤ 15 results | Index format only, no bodies |
 | Record size | 50–300 tokens target, body ≤ 2,000 chars | Ingest validation |
 | Self-accounting | Every injection records its token estimate | Reported via `agentctx status` |
+| Digest drift hint | ≤ 60 tokens, omitted when < 2 candidates | Lowest-priority section; truncated first |
 
 ---
 
