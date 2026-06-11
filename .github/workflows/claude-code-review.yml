@@ -27,7 +27,7 @@ on:
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -44,8 +44,8 @@ jobs:
     timeout-minutes: 12
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: write
+      issues: write
       id-token: write
       actions: read
 
