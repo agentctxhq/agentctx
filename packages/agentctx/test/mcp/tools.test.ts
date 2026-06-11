@@ -289,6 +289,67 @@ describe("ctx_record", () => {
     expect(result.isError).toBe(true);
     expect(result.payload).toHaveProperty("error");
   });
+
+  it("rejects an already-superseded supersedes target with a structured error", () => {
+    const old = seed({ title: "Stale head", body: "v1" });
+    seed({ title: "Current head", body: "v2", supersedes: old.id });
+
+    const { payload, isError } = call("ctx_record", {
+      type: "decision",
+      title: "v3",
+      body: "v3 body",
+      supersedes: old.id,
+    });
+    expect(isError).toBe(true);
+    expect((payload as { error: string }).error).toContain("already superseded");
+  });
+
+  it("refuses cross-namespace supersession in either direction", () => {
+    const globalRecord = insertRecord(tmp.db, {
+      projectId: GLOBAL_PROJECT_ID,
+      type: "preference",
+      title: "Global preference",
+      body: "applies everywhere",
+      scope: "global",
+      source: "cli",
+    });
+
+    // A project-scoped record must not soft-delete a global one for every project.
+    const projectOverGlobal = call("ctx_record", {
+      type: "preference",
+      title: "Local override",
+      body: "local body",
+      supersedes: globalRecord.id,
+    });
+    expect(projectOverGlobal.isError).toBe(true);
+    expect((projectOverGlobal.payload as { error: string }).error).toContain('scope: "global"');
+    expect(getRecord(tmp.db, globalRecord.id)?.supersededAt).toBeNull();
+
+    // And a global record must not absorb a project-scoped head.
+    const projectRecord = seed({ title: "Project rule", body: "project body" });
+    const globalOverProject = call("ctx_record", {
+      type: "decision",
+      title: "Global rule",
+      body: "global body",
+      scope: "global",
+      supersedes: projectRecord.id,
+    });
+    expect(globalOverProject.isError).toBe(true);
+    expect(getRecord(tmp.db, projectRecord.id)?.supersededAt).toBeNull();
+
+    // With the matching scope, superseding the global head works.
+    const matched = call("ctx_record", {
+      type: "preference",
+      title: "Global preference v2",
+      body: "updated everywhere",
+      scope: "global",
+      supersedes: globalRecord.id,
+    });
+    expect(matched.isError).toBe(false);
+    expect(
+      getRecord(tmp.db, globalRecord.id, { includeSuperseded: true })?.supersededAt,
+    ).not.toBeNull();
+  });
 });
 
 describe("ctx_supersede", () => {
