@@ -51,8 +51,10 @@ export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<
       case "reset":
         return await (await import("./reset.js")).runReset(env, args);
       case "hook":
-        // Normally short-circuited in cli.ts; kept as defense in depth.
-        // Exits 0 silently for every event (real behavior lands in issue 3/7).
+        // Real dispatch happens in cli.ts (hooks/runner.js) before this
+        // module ever loads, with its own swallow-everything error policy.
+        // This arm is defense in depth only: exit 0 silently, never let a
+        // hook invocation fall through to command error handling.
         return 0;
       default:
         env.io.err(`agentctx: unknown command "${command}"`);
