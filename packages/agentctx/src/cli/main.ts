@@ -23,6 +23,7 @@ Commands:
   reset        delete the current project's context records (asks first)
   extract      LLM extraction from a session transcript (spawned by the Stop hook)
   consolidate  offline pass: confidence lifecycle, scores, SessionStart digest
+  mcp          MCP stdio server exposing the ctx_* tools (started by Claude Code)
   hook <event> hook dispatcher invoked by Claude Code (not for direct use)
 
 Run any command with --help semantics via the docs:
@@ -56,6 +57,8 @@ export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<
         return await (await import("../extract/run.js")).runExtract(env, args);
       case "consolidate":
         return await (await import("../consolidate/run.js")).runConsolidate(env, args);
+      case "mcp":
+        return await (await import("../mcp/run.js")).runMcp(env, args);
       case "hook":
         // Real dispatch happens in cli.ts (hooks/runner.js) before this
         // module ever loads, with its own swallow-everything error policy.

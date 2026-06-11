@@ -3,9 +3,7 @@
  *
  * The `claude mcp add --scope user`-equivalent: a surgical edit of the
  * `mcpServers` map in `~/.claude.json`. The registered command is
- * PATH-resolved `agentctx mcp`; the actual server ships in a later v0.1
- * issue, and an unknown subcommand exits non-zero without side effects,
- * so early registration is harmless.
+ * PATH-resolved `agentctx mcp` — the stdio server in ../mcp/run.ts.
  */
 import {
   type JsonObject,
