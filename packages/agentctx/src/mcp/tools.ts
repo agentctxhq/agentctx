@@ -13,6 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { Database } from "better-sqlite3";
+import { buildSyncReport } from "../consolidate/drift.js";
 import { PROFILE_TITLES } from "../profile/detect.js";
 import { getRecord, insertRecord, listRecords, supersedeRecord } from "../storage/records.js";
 import { searchRecords } from "../storage/search.js";
@@ -297,11 +298,15 @@ function ctxRelated(ctx: ToolContext, args: Record<string, unknown>): unknown {
 
 // --- ctx_sync_claudemd -----------------------------------------------------
 
-function ctxSyncClaudemd(): unknown {
-  // Drift computation lands with the consolidation scan (v0.1 issue 6/7);
-  // until then the report is well-formed and empty. Read-only by contract:
-  // applying changes to CLAUDE.md is always a human/Claude action.
-  return { missing: [], contradicted: [], proposed_diff: "" };
+function ctxSyncClaudemd(ctx: ToolContext): unknown {
+  // Read-only by contract (Invariant 5): applying changes to CLAUDE.md is
+  // always a human/Claude action in the session, never this tool's side effect.
+  const report = buildSyncReport(ctx.db, ctx.projectId, ctx.cwd);
+  return {
+    missing: report.missing.map(({ id, type, title }) => ({ id, type, title })),
+    contradicted: report.contradicted,
+    proposed_diff: report.proposed_diff,
+  };
 }
 
 // --- registry ----------------------------------------------------------------
@@ -426,7 +431,7 @@ export function toolDefinitions(): ToolDefinition[] {
         "Report drift between the context store and CLAUDE.md: facts missing from it, contradicted by it, and a proposed diff. " +
         "Read-only — never edits CLAUDE.md.",
       inputSchema: { type: "object", properties: {} },
-      handler: ctxSyncClaudemd,
+      handler: (ctx) => ctxSyncClaudemd(ctx),
     },
   ];
 }

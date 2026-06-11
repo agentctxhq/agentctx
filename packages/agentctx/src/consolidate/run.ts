@@ -20,8 +20,10 @@ import type { Database } from "better-sqlite3";
 import type { CliEnv } from "../cli/env.js";
 import { loadConfig } from "../config.js";
 import { openDatabase } from "../storage/db.js";
+import { resolveProjectId } from "../storage/namespace.js";
 import { GLOBAL_PROJECT_ID, type RecordType } from "../storage/types.js";
 import { buildDigestSections, writeDigest } from "./digest.js";
+import { scanClaudemdDrift } from "./drift.js";
 
 /**
  * Recency half-lives in days, per type lifecycle (SPEC §3.2). `null` means
@@ -60,6 +62,10 @@ export async function runConsolidate(env: CliEnv, _args: string[] = []): Promise
 function consolidate(db: Database, env: CliEnv, now: Date): void {
   upgradeReinforced(db, reinforceThreshold(env));
   updateScores(db, now);
+  // Drift scan for the current project only (SessionEnd fires in the project's
+  // directory; other projects are scanned when their own SessionEnd fires).
+  const currentProjectId = resolveProjectId(env.cwd);
+  scanClaudemdDrift(db, currentProjectId, env.cwd);
   for (const projectId of projectIds(db)) {
     writeDigest(env.agentctxHome, projectId, buildDigestSections(db, projectId), now);
   }

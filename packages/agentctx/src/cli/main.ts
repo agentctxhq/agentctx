@@ -21,6 +21,7 @@ Commands:
   uninstall    remove hooks and MCP registration (add --data to delete stored context)
   config       get/set settings (llm, embeddings, modelTier, reinforceThreshold)
   reset        delete the current project's context records (asks first)
+  sync         compare context store against CLAUDE.md and propose additions
   extract      LLM extraction from a session transcript (spawned by the Stop hook)
   consolidate  offline pass: confidence lifecycle, scores, SessionStart digest
   mcp          MCP stdio server exposing the ctx_* tools (started by Claude Code)
@@ -53,6 +54,8 @@ export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<
         return await (await import("./config-cmd.js")).runConfig(env, args);
       case "reset":
         return await (await import("./reset.js")).runReset(env, args);
+      case "sync":
+        return await (await import("./sync.js")).runSync(env, args);
       case "extract":
         return await (await import("../extract/run.js")).runExtract(env, args);
       case "consolidate":

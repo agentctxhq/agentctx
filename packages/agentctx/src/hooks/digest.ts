@@ -27,6 +27,7 @@ export const DIGEST_SECTION_ORDER = [
   "handover",
   "globalPreferences",
   "mcpHint",
+  "driftHint",
 ] as const;
 
 export type DigestSection = (typeof DIGEST_SECTION_ORDER)[number];

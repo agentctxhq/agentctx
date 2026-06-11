@@ -19,6 +19,7 @@ import { truncateToTokens } from "../hooks/tokens.js";
 import { rowToRecord } from "../storage/records.js";
 import type { ContextRecord } from "../storage/types.js";
 import { GLOBAL_PROJECT_ID } from "../storage/types.js";
+import { DRIFT_CANDIDATE_THRESHOLD } from "./drift.js";
 
 /** Per-section build budgets (SPEC §4 digest composition). */
 export const SECTION_BUDGET_TOKENS: Record<DigestSection, number> = {
@@ -27,6 +28,7 @@ export const SECTION_BUDGET_TOKENS: Record<DigestSection, number> = {
   handover: 400,
   globalPreferences: 200,
   mcpHint: 100,
+  driftHint: 60,
 };
 
 const MAX_DIGEST_DECISIONS = 10;
@@ -86,6 +88,23 @@ export function buildDigestSections(
     sections.mcpHint = truncateToTokens(
       `agentctx has ${total} context records for this project. For deeper context use the MCP tools: ctx_search(query) to find records, ctx_get(ids) for full content.`,
       SECTION_BUDGET_TOKENS.mcpHint,
+    );
+  }
+
+  // ADR-013: include a one-line note when ≥ 2 drift candidates exist.
+  const driftRow = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM records
+       WHERE project_id = ? AND superseded_at IS NULL
+         AND type IN ('decision', 'convention')
+         AND claudemd_drift_score >= ?`,
+    )
+    .get(projectId, DRIFT_CANDIDATE_THRESHOLD) as { n: number };
+
+  if (driftRow.n >= 2) {
+    sections.driftHint = truncateToTokens(
+      `${driftRow.n} architectural decisions in the context store are not reflected in CLAUDE.md — run 'agentctx sync' to review.`,
+      SECTION_BUDGET_TOKENS.driftHint,
     );
   }
 
