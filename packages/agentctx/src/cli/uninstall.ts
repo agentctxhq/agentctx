@@ -19,6 +19,10 @@ Options:
   --force   skip the confirmation prompt (required without a TTY)`;
 
 export async function runUninstall(env: CliEnv, args: string[]): Promise<number> {
+  if (args.includes("--help")) {
+    env.io.out(UNINSTALL_USAGE);
+    return 0;
+  }
   const { values } = parseArgs({
     args,
     options: {
@@ -31,6 +35,8 @@ export async function runUninstall(env: CliEnv, args: string[]): Promise<number>
     const result = removeHooks(settingsPath);
     if (result.changed) {
       env.io.out(`✓ hooks removed from ${settingsPath}`);
+    } else if (existsSync(settingsPath)) {
+      env.io.out(`· no hooks registered in ${settingsPath}`);
     }
   }
 

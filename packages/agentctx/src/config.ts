@@ -7,7 +7,7 @@
  * is strict (bad keys/values are rejected with a clear error). Unknown keys
  * in the file are preserved across writes for forward compatibility.
  */
-import { readJsonObject, writeJsonObject } from "./claude/json-file.js";
+import { SettingsError, readJsonObject, writeJsonObject } from "./claude/json-file.js";
 
 export const CONFIG_FILE_NAME = "config.json";
 
@@ -83,7 +83,17 @@ export function saveConfig(path: string, updates: Partial<AgentctxConfig>): Agen
 
 /** Create the config file with defaults when it does not exist yet. */
 export function ensureConfigFile(path: string): boolean {
-  if (readJsonObject(path) !== null) {
+  let existing: ReturnType<typeof readJsonObject>;
+  try {
+    existing = readJsonObject(path);
+  } catch (error) {
+    if (error instanceof SettingsError) {
+      existing = null; // corrupt file → overwrite with defaults, consistent with lenient loadConfig
+    } else {
+      throw error;
+    }
+  }
+  if (existing !== null) {
     return false;
   }
   writeJsonObject(path, { ...DEFAULT_CONFIG });

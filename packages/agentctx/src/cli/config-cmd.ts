@@ -38,6 +38,10 @@ const FLAG_SHORTCUTS: Record<string, Partial<AgentctxConfig>> = {
 };
 
 export async function runConfig(env: CliEnv, args: string[]): Promise<number> {
+  if (args.includes("--help")) {
+    env.io.out(CONFIG_USAGE);
+    return 0;
+  }
   const [first, ...rest] = args;
 
   if (first === undefined) {
