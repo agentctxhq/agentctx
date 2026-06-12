@@ -74,6 +74,7 @@ This is an npm-workspaces monorepo; the web dashboard (`@agentctxhq/agentctx-ui`
 
 | Document | Question it answers |
 |---|---|
+| [CHANGELOG.md](./CHANGELOG.md) | **What changed** — release notes for every published version |
 | [docs/VISION.md](./docs/VISION.md) | **Why** — the problem, what this is not, what success looks like |
 | [docs/SPEC.md](./docs/SPEC.md) | **What** — normative contracts: context model, hooks, MCP tools, budgets |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **Why this shape** — every decision, ADR-style, with trade-offs |
