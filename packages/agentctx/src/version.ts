@@ -3,4 +3,4 @@
  * and `--help` never load better-sqlite3 (index.ts re-exports the storage
  * surface, which does).
  */
-export const VERSION = "0.0.1";
+export const VERSION = "0.1.0";

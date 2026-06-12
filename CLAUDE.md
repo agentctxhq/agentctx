@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The core distinction: this is a **context** tool, not a memory tool. Context is structured understanding of what is being built; memory is a log of what happened.
 
-This project is in early pre-alpha (v0.0.1). The current codebase is a placeholder CLI stub.
+The v0.1 milestone surface is implemented (v0.1.0): storage + FTS5 retrieval, hooks, LLM extraction, the MCP server, drift detection, and the full CLI. Current work targets v0.2 (semantic layer + web dashboard).
 
 Documentation hierarchy — consult before making design-level changes:
 - **docs/VISION.md** — why the project exists and its scope boundaries (the "What agentctx Is Not" list is binding)
@@ -25,7 +25,7 @@ Contract changes (record types, tool signatures, budgets) require updating SPEC.
 
 ## Architecture
 
-The repo is an npm-workspaces monorepo. The CLI package lives in `packages/agentctx` (TypeScript, ESM): source in `src/`, compiled output in `dist/`, with `dist/cli.js` exposed as the `agentctx` binary via `package.json#bin`. The web dashboard (`@agentctxhq/agentctx-ui`, v0.2) will be a sibling package under `packages/`. There are no runtime dependencies yet; the v0.1 target is zero runtime dependencies beyond `better-sqlite3`.
+The repo is an npm-workspaces monorepo. The CLI package lives in `packages/agentctx` (TypeScript, ESM): source in `src/`, compiled output in `dist/`, with `dist/cli.js` exposed as the `agentctx` binary via `package.json#bin`. The web dashboard (`@agentctxhq/agentctx-ui`, v0.2) will be a sibling package under `packages/`. The only runtime dependency is `better-sqlite3` — the v0.1 rule (zero runtime dependencies beyond it) holds and every addition must be justified against an ADR.
 
 Key constraints from ARCHITECTURE.md (do not violate without updating the ADRs):
 - No daemon/background process — hooks invoke the CLI, which reads/writes SQLite and exits
