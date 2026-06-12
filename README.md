@@ -2,7 +2,7 @@
 
 The context layer for Claude Code.
 
-> Early pre-alpha. Active development underway.
+> v0.1 — the complete working foundation: capture, store, inject.
 
 ---
 
@@ -16,7 +16,7 @@ Most solutions treat this as a memory problem. agentctx treats it as a context p
 
 agentctx enhances Claude Code through hooks, MCP tools, and persistent structured storage. It saves tokens, improves answer quality, and adapts to each repo and each developer's work style — automatically.
 
-No API key. No cloud. Everything in `~/.agentctx/` on your disk.
+No daemon. No cloud. Everything in `~/.agentctx/` on your disk. An Anthropic API key enables session-end LLM extraction (~$0.015/session, out-of-band); without one, agentctx degrades gracefully to deterministic capture.
 
 ---
 
@@ -39,11 +39,24 @@ npm install -g @agentctxhq/agentctx
 agentctx init
 ```
 
+Requires Node 20, 22, or 24 — the LTS lines with `better-sqlite3` prebuilt binaries. agentctx never compiles native code at install time.
+
+`agentctx init` is the only setup step (no postinstall scripts): it creates `~/.agentctx/`, bootstraps the database, registers the Claude Code hooks and MCP server, and detects the project profile. `agentctx uninstall` removes all of it, surgically.
+
+```
+agentctx status       context summary, injection token cost, extraction cost
+agentctx search <q>   full-text search of the context store
+agentctx show <id>    pretty-print a full record
+agentctx export       render the context store as organized Markdown
+agentctx profile      show/edit/clear global developer preferences
+agentctx sync         compare context store against CLAUDE.md, propose additions
+```
+
 ---
 
 ## Status
 
-This project is in early pre-alpha (`v0.0.1`). The current codebase is a placeholder stub. Active development is targeting `v0.1`.
+`v0.1.0` — the v0.1 milestone surface ([ROADMAP](./docs/ROADMAP.md)) is implemented: storage with FTS5 retrieval, budgeted hook injection, session-end LLM extraction, the seven-tool MCP server, CLAUDE.md drift detection, and the full CLI. v0.2 (semantic layer + web dashboard) is next.
 
 ---
 

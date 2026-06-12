@@ -1,6 +1,6 @@
 {
   "name": "@agentctxhq/agentctx",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Context layer for Claude Code — persistent structured context across sessions",
   "type": "module",
   "bin": {
@@ -36,6 +36,9 @@
   ],
   "author": "agentctxhq",
   "license": "Elastic-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/agentctxhq/agentctx",

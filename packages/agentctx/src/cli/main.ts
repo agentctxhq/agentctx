@@ -11,6 +11,9 @@ import { SettingsError } from "../claude/json-file.js";
 import { ConfigError } from "../config.js";
 import { VERSION } from "../version.js";
 import { type CliEnv, defaultEnv } from "./env.js";
+// Dependency-free by design — safe to import statically even when the
+// better-sqlite3 native module cannot load (see node-support.ts).
+import { describeNativeLoadError } from "./node-support.js";
 
 const HELP = `agentctx ${VERSION} — the context layer for Claude Code
 
@@ -19,6 +22,11 @@ Usage: agentctx <command> [options]
 Commands:
   init         set up agentctx: data dir, database, Claude Code hooks, MCP server
   uninstall    remove hooks and MCP registration (add --data to delete stored context)
+  status       project context summary, injection token cost, extraction cost
+  search       FTS5 search of the context store from the terminal
+  show <id>    pretty-print a full record
+  export       render the context store as organized Markdown
+  profile      show/edit/clear global developer preferences
   config       get/set settings (llm, embeddings, modelTier, reinforceThreshold)
   reset        delete the current project's context records (asks first)
   sync         compare context store against CLAUDE.md and propose additions
@@ -46,10 +54,28 @@ export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<
       case "version":
         env.io.out(VERSION);
         return 0;
-      case "init":
+      case "init": {
+        // OQ-1: fail init with a clear message on unsupported Node, before
+        // anything tries to load the better-sqlite3 native module.
+        const unsupported = (await import("./node-support.js")).unsupportedNodeReason();
+        if (unsupported !== null) {
+          env.io.err(`agentctx: ${unsupported}`);
+          return 1;
+        }
         return await (await import("./init.js")).runInit(env, args);
+      }
       case "uninstall":
         return await (await import("./uninstall.js")).runUninstall(env, args);
+      case "status":
+        return await (await import("./status.js")).runStatus(env, args);
+      case "search":
+        return await (await import("./search.js")).runSearch(env, args);
+      case "show":
+        return await (await import("./show.js")).runShow(env, args);
+      case "export":
+        return await (await import("./export.js")).runExport(env, args);
+      case "profile":
+        return await (await import("./profile-cmd.js")).runProfile(env, args);
       case "config":
         return await (await import("./config-cmd.js")).runConfig(env, args);
       case "reset":
@@ -89,6 +115,14 @@ function reportError(env: CliEnv, error: unknown): number {
   }
   if (error instanceof Error && error.name === "StorageError") {
     env.io.err(`agentctx: ${error.message}`);
+    return 1;
+  }
+  // A failed better-sqlite3 native load (ABI mismatch after a Node switch,
+  // or a Node major without prebuilds — OQ-1) surfaces as an import error
+  // from any storage-touching command. Translate it instead of a stack dump.
+  const nativeLoad = describeNativeLoadError(error);
+  if (nativeLoad !== null) {
+    env.io.err(`agentctx: ${nativeLoad}`);
     return 1;
   }
   throw error;
