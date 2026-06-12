@@ -30,9 +30,9 @@ Each milestone ships something independently useful.
 
 ---
 
-### v0.1 — Foundation: capture, store, inject
+### v0.1 — Foundation: capture, store, inject ✓ shipped 2026-06-12
 
-*This is the complete working tool. Every later milestone improves it.*
+*Published as `@agentctxhq/agentctx@0.1.0`. This is the complete working tool. Every later milestone improves it.*
 
 **What it delivers:**
 - A new session begins knowing your active task, recent architectural decisions, and where you left off — without re-explaining
@@ -105,7 +105,7 @@ Seven tools via stdio, registered at user scope:
 
 ---
 
-### v0.2 — Semantic layer + web dashboard
+### v0.2 — Semantic layer + web dashboard ← current
 
 *Adds the ability to find context by meaning, not just keywords. Adds a visual interface.*
 

@@ -18,6 +18,7 @@ Documentation hierarchy — consult before making design-level changes:
 - **docs/SPEC.md** — normative contracts: record types, schema, hook behavior, MCP tool signatures, token budgets. Source of truth in implementation debates
 - **docs/ARCHITECTURE.md** — all architecture decisions (ADR-style) and their rationale
 - **docs/ROADMAP.md** — the milestone plan
+- **CHANGELOG.md** — release notes; update when shipping a new version
 
 Contract changes (record types, tool signatures, budgets) require updating SPEC.md and the relevant ADR in the same PR.
 
