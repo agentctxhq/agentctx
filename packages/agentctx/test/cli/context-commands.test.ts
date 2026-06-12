@@ -222,6 +222,27 @@ describe("agentctx export", () => {
     expect(out).toContain("### Prefers vitest");
   });
 
+  it("exports global non-preference records too — nothing visible is dropped", async () => {
+    const db = openDatabase(t.env.dbPath);
+    try {
+      insertRecord(db, {
+        projectId: GLOBAL_PROJECT_ID,
+        type: "convention",
+        scope: "global",
+        title: "Global convention via MCP",
+        body: "Recorded with ctx_record scope global.",
+        source: "mcp_tool",
+      });
+    } finally {
+      db.close();
+    }
+    expect(await runExport(t.env, [])).toBe(0);
+    const out = t.stdout.join("\n");
+    expect(out).toContain("## Other global records");
+    expect(out).toContain("### Global convention via MCP");
+    expect(out).toContain("1 active record(s)");
+  });
+
   it("omits superseded records (Invariant 3) and writes --out files", async () => {
     const oldId = seed({ title: "Abandoned plan", body: "Replaced later." });
     const db = openDatabase(t.env.dbPath);
@@ -310,6 +331,30 @@ describe("agentctx profile", () => {
       expect(getRecord(db, id, { includeSuperseded: true })).toBeNull();
     } finally {
       db.close();
+    }
+  });
+
+  it("clear refuses a superseded id and points at the current head", async () => {
+    const oldId = seedGlobalPreference("Outdated version");
+    const db = openDatabase(t.env.dbPath);
+    let headId: string;
+    try {
+      headId = supersedeRecord(db, oldId, {
+        title: "Current version",
+        body: "Body.",
+        source: "cli",
+      }).replacement.id;
+    } finally {
+      db.close();
+    }
+
+    expect(await runProfile(t.env, ["clear", oldId, "--force"])).toBe(1);
+    expect(t.stderr.join("\n")).toContain(headId);
+    const db2 = openDatabase(t.env.dbPath);
+    try {
+      expect(getRecord(db2, oldId, { includeSuperseded: true })).not.toBeNull();
+    } finally {
+      db2.close();
     }
   });
 

@@ -59,9 +59,10 @@ export async function runExport(env: CliEnv, args: string[]): Promise<number> {
   try {
     const visible = listRecords(db, projectId, { limit: EXPORT_RECORD_LIMIT });
     const project = visible.filter((r) => r.projectId === projectId);
-    const global = visible.filter(
-      (r) => r.projectId === GLOBAL_PROJECT_ID && r.type === "preference",
-    );
+    // Everything else listRecords returned is global-namespace (SPEC §3.4) —
+    // preferences today, but any type can land there via ctx_record's global
+    // scope, and an export that silently drops records defeats ADR-004.
+    const global = visible.filter((r) => r.projectId === GLOBAL_PROJECT_ID);
     count = project.length + global.length;
     markdown = renderExport(projectId, project, global, new Date());
   } finally {
@@ -80,7 +81,7 @@ export async function runExport(env: CliEnv, args: string[]): Promise<number> {
 export function renderExport(
   projectId: string,
   project: ContextRecord[],
-  globalPreferences: ContextRecord[],
+  global: ContextRecord[],
   now: Date,
 ): string {
   const lines: string[] = [
@@ -88,7 +89,7 @@ export function renderExport(
     "",
     `- Project: \`${projectId}\``,
     `- Exported: ${now.toISOString()}`,
-    `- ${project.length + globalPreferences.length} active record(s). Derived from the agentctx database, which remains the source of truth.`,
+    `- ${project.length + global.length} active record(s). Derived from the agentctx database, which remains the source of truth.`,
   ];
 
   for (const section of SECTIONS) {
@@ -102,9 +103,18 @@ export function renderExport(
     }
   }
 
+  const globalPreferences = global.filter((r) => r.type === "preference");
   if (globalPreferences.length > 0) {
     lines.push("", "## Global developer preferences");
     for (const record of byNewest(globalPreferences)) {
+      lines.push(...renderRecord(record));
+    }
+  }
+
+  const globalOther = global.filter((r) => r.type !== "preference");
+  if (globalOther.length > 0) {
+    lines.push("", "## Other global records");
+    for (const record of byNewest(globalOther)) {
       lines.push(...renderRecord(record));
     }
   }

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInit } from "../src/cli/init.js";
 import { runConsolidate } from "../src/consolidate/run.js";
+import { PRICE_PER_MTOK } from "../src/extract/api.js";
 import { runExtract } from "../src/extract/run.js";
 import { SESSION_START_MAX_TOKENS } from "../src/hooks/digest.js";
 import type { HookEnv } from "../src/hooks/env.js";
@@ -199,8 +200,10 @@ describe("v0.1 end to end", () => {
         .prepare("SELECT tokens_injected, extraction_cost_usd FROM sessions WHERE session_id = ?")
         .get(sid) as { tokens_injected: number; extraction_cost_usd: number };
       expect(session.tokens_injected).toBeGreaterThan(0);
-      // 2000 input × $1/MTok + 300 output × $5/MTok
-      expect(session.extraction_cost_usd).toBeCloseTo(0.0035, 6);
+      // Cost of the mocked usage block (2000 in / 300 out), priced by the
+      // same constants the extractor uses.
+      const expectedCost = (2000 * PRICE_PER_MTOK.input + 300 * PRICE_PER_MTOK.output) / 1_000_000;
+      expect(session.extraction_cost_usd).toBeCloseTo(expectedCost, 6);
     } finally {
       db.close();
     }
