@@ -76,7 +76,7 @@ Each milestone ships something independently useful.
 #### MCP server
 
 Seven tools via stdio, registered at user scope:
-- `ctx_search(query, type?, file?, scope?)` — FTS5 + recency → compact index (≤50 tokens/result)
+- `ctx_search(query, type?, file?, scope?, limit?)` — FTS5 + recency → compact index (≤50 tokens/result)
 - `ctx_get(ids[])` — full records by ID (progressive disclosure)
 - `ctx_record(type, title, body, supersedes?, scope?)` — explicit capture
 - `ctx_supersede(old_id, new_body, rationale)` — versioning
@@ -137,7 +137,7 @@ Seven tools via stdio, registered at user scope:
 - History queries: `ctx_search(as_of: "2026-03-01")` — what was true on a given date
 - Worktree support: `WorktreeCreate` hook inherits project context into new worktree; per-worktree handover scoping (OQ-3)
 - Subagent injection: `SubagentStart` hook injects task-relevant context into Claude Code subagents (matcher-scoped, same token budget discipline)
-- Confidence lifecycle: inferred preferences upgrade to `reinforced` after N cross-session appearances; reinforced preferences get stronger SessionStart priority
+- Confidence promotion UX: `agentctx reinforce <id>` to manually promote inferred → reinforced; reinforced preferences get stronger SessionStart priority *(the automatic N-appearance lifecycle already shipped in v0.1)*
 
 #### Team context
 
