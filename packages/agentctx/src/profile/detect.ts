@@ -172,8 +172,9 @@ function detectStack(dir: string, pkg: PackageJson | null): string[] {
     if (pm !== null) {
       lines.push(`Package manager: ${pm}`);
     }
-    if (Array.isArray(pkg.workspaces) && pkg.workspaces.length > 0) {
-      lines.push(`Monorepo: workspaces (${pkg.workspaces.join(", ")})`);
+    const workspaces = workspacePackages(pkg.workspaces);
+    if (workspaces.length > 0) {
+      lines.push(`Monorepo: workspaces (${workspaces.join(", ")})`);
     }
   }
 
@@ -268,6 +269,18 @@ function collectDependencies(pkg: PackageJson): Set<string> {
     }
   }
   return deps;
+}
+
+function workspacePackages(workspaces: unknown): string[] {
+  if (Array.isArray(workspaces)) {
+    return workspaces.filter((workspace): workspace is string => typeof workspace === "string");
+  }
+  if (isObject(workspaces) && Array.isArray(workspaces.packages)) {
+    return workspaces.packages.filter(
+      (workspace): workspace is string => typeof workspace === "string",
+    );
+  }
+  return [];
 }
 
 function readPackageJson(dir: string): PackageJson | null {
