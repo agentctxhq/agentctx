@@ -89,6 +89,20 @@ describe("detectProjectProfile", () => {
     expect(stack).toContain("Python");
   });
 
+  it("detects Yarn object-form workspaces", () => {
+    writePackageJson({ workspaces: { packages: ["packages/*", "apps/*"], nohoist: ["**/react"] } });
+
+    const stack = entryByTitle(PROFILE_TITLES.stack).body;
+    expect(stack).toContain("workspaces (packages/*, apps/*)");
+  });
+
+  it("ignores workspaces without package globs", () => {
+    writePackageJson({ workspaces: { nohoist: ["**/react"] } });
+
+    const stack = entryByTitle(PROFILE_TITLES.stack).body;
+    expect(stack).not.toContain("Monorepo: workspaces");
+  });
+
   it("survives a malformed package.json", () => {
     writeFileSync(join(dir, "package.json"), "{ nope", { encoding: "utf8" });
     expect(detectProjectProfile(dir)).toEqual([]);
