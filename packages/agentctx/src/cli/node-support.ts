@@ -46,10 +46,14 @@ export function unsupportedNodeReason(version: string = process.versions.node): 
 export function describeNativeLoadError(error: unknown): string | null {
   const message = error instanceof Error ? error.message : String(error);
   const abiMismatch = message.includes("NODE_MODULE_VERSION");
+  // ERR_DLOPEN_FAILED is raised for any native module; only claim it when
+  // the message names better-sqlite3 — generic advice would be wrong advice.
   const missingBinding =
     message.includes("Could not locate the bindings file") ||
     message.includes("better_sqlite3.node") ||
-    (error instanceof Error && (error as NodeJS.ErrnoException).code === "ERR_DLOPEN_FAILED");
+    (error instanceof Error &&
+      (error as NodeJS.ErrnoException).code === "ERR_DLOPEN_FAILED" &&
+      message.includes("better_sqlite3"));
   if (!abiMismatch && !missingBinding) {
     return null;
   }

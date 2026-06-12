@@ -31,6 +31,7 @@ export async function runStatus(env: CliEnv, args: string[]): Promise<number> {
     env.io.out(STATUS_USAGE);
     return 0;
   }
+  // Strict parse: reject unknown flags/positionals (status takes none).
   parseArgs({ args, options: {} });
 
   if (!existsSync(env.dbPath)) {

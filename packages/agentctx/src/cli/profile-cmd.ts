@@ -146,6 +146,16 @@ async function profileClear(env: CliEnv, args: string[]): Promise<number> {
   try {
     const record = requireGlobalPreference(env, db, id, "clear");
     if (record === null) return 1;
+    // Deleting an already-superseded version would leave the current head in
+    // place — the user would think the preference is gone when it isn't.
+    if (record.supersededAt !== null) {
+      env.io.err(
+        `agentctx profile clear: ${id} is already superseded${
+          record.supersededBy === null ? "" : ` — the current version is ${record.supersededBy}`
+        }; use the current id to remove the preference`,
+      );
+      return 1;
+    }
 
     const confirmed =
       values.force ||
