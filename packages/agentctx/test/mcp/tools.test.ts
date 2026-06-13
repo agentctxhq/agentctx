@@ -87,6 +87,30 @@ describe("ctx_search", () => {
     expect(entry).not.toHaveProperty("body");
   });
 
+  it("formats compact ages around the day boundary", () => {
+    const now = Date.now();
+    const rows = [
+      { title: "Boundary age 23h", age: "23h", recordedAt: now - 23 * 60 * 60_000 },
+      { title: "Boundary age 30h", age: "1d", recordedAt: now - 30 * 60 * 60_000 },
+      { title: "Boundary age 48h", age: "2d", recordedAt: now - 48 * 60 * 60_000 },
+    ];
+
+    for (const row of rows) {
+      const record = seed({ title: row.title, body: "shared boundary age probe" });
+      tmp.db
+        .prepare("UPDATE records SET recorded_at = ? WHERE id = ?")
+        .run(new Date(row.recordedAt).toISOString(), record.id);
+    }
+
+    const { payload } = call("ctx_search", { query: "boundary age probe", limit: 3 });
+    const { results } = payload as { results: Array<{ title: string; age: string }> };
+    const ages = new Map(results.map((result) => [result.title, result.age]));
+
+    for (const row of rows) {
+      expect(ages.get(row.title)).toBe(row.age);
+    }
+  });
+
   it("filters superseded records and foreign namespaces", () => {
     const old = seed({ title: "Old decision", body: "use REST everywhere" });
     seed({ title: "New decision", body: "use gRPC everywhere", supersedes: old.id });
