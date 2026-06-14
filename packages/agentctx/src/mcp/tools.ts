@@ -547,7 +547,7 @@ function formatAge(recordedAt: string, nowMs: number): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 60) return `${days}d`;
+  if (days < 30) return `${days}d`;
   return `${Math.floor(days / 30)}mo`;
 }
 
