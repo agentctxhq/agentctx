@@ -237,6 +237,14 @@ describe("ctx_get", () => {
     expect(call("ctx_get", { ids: [] }).isError).toBe(true);
     expect(call("ctx_get", { ids: "not-an-array" }).isError).toBe(true);
   });
+
+  it("advertises minItems: 1 and maxItems: GET_IDS_MAX in the input schema", () => {
+    const def = tools.find((t) => t.name === "ctx_get");
+    const idsSchema = (def?.inputSchema as { properties: { ids: Record<string, unknown> } })
+      ?.properties?.ids;
+    expect(idsSchema?.minItems).toBe(1);
+    expect(idsSchema?.maxItems).toBe(GET_IDS_MAX);
+  });
 });
 
 describe("ctx_record", () => {
