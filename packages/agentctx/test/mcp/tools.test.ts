@@ -87,6 +87,18 @@ describe("ctx_search", () => {
     expect(entry).not.toHaveProperty("body");
   });
 
+  it("formats one-month-old records with the month bucket", () => {
+    const record = seed({ title: "One month old", body: "month bucket search term" });
+    tmp.db
+      .prepare("UPDATE records SET recorded_at = datetime('now', '-30 days') WHERE id = ?")
+      .run(record.id);
+
+    const { payload } = call("ctx_search", { query: "month bucket" });
+    const { results } = payload as { results: Array<{ age: string }> };
+
+    expect(results[0]?.age).toBe("1mo");
+  });
+
   it("filters superseded records and foreign namespaces", () => {
     const old = seed({ title: "Old decision", body: "use REST everywhere" });
     seed({ title: "New decision", body: "use gRPC everywhere", supersedes: old.id });
