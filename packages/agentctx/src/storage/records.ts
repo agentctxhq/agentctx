@@ -20,6 +20,15 @@ import {
 import { ulid } from "./ulid.js";
 
 /**
+ * Global visibility (SPEC §3.4): a record in the reserved `_global` namespace
+ * is visible to other projects iff its `scope` is `'global'`. This is the
+ * canonical predicate — anything counting or reading cross-project globals
+ * must apply it, otherwise a mis-scoped `_global` row leaks into results that
+ * the scoped reads never surface.
+ */
+export const GLOBAL_VISIBLE_SQL = `(project_id = '${GLOBAL_PROJECT_ID}' AND scope = 'global')`;
+
+/**
  * Read scoping (SPEC §3.4): a project sees its own namespace plus global
  * records from the reserved `_global` namespace — nothing else.
  *
@@ -27,7 +36,7 @@ import { ulid } from "./ulid.js";
  * _global rows are visible regardless of scope (a namespace sees its own
  * records without scope restriction). This asymmetry is intentional.
  */
-export const SCOPE_FILTER_SQL = `(project_id = @projectId OR (project_id = '${GLOBAL_PROJECT_ID}' AND scope = 'global'))`;
+export const SCOPE_FILTER_SQL = `(project_id = @projectId OR ${GLOBAL_VISIBLE_SQL})`;
 
 interface RecordRow {
   id: string;
