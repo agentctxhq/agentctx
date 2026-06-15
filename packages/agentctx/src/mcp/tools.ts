@@ -348,9 +348,7 @@ export function toolDefinitions(): ToolDefinition[] {
     },
     {
       name: "ctx_get",
-      description:
-        "Fetch full context records by id (at most 10 per call), including bi-temporal fields and provenance. " +
-        "Unknown ids are reported in a 'missing' array.",
+      description: `Fetch full context records by id (at most ${GET_IDS_MAX} per call), including bi-temporal fields and provenance. Unknown ids are reported in a 'missing' array.`,
       inputSchema: {
         type: "object",
         properties: {

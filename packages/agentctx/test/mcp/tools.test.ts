@@ -195,6 +195,11 @@ describe("ctx_search", () => {
 });
 
 describe("ctx_get", () => {
+  it("advertises the same id cap as GET_IDS_MAX", () => {
+    const schema = tools.find((tool) => tool.name === "ctx_get");
+    expect(schema?.description).toContain(`at most ${String(GET_IDS_MAX)} per call`);
+  });
+
   it("returns full records, reports unknown ids as missing, and bumps access stats", () => {
     const record = seed({ title: "Full record", body: "the whole body" });
     const { payload, isError } = call("ctx_get", { ids: [record.id, "nope"] });
