@@ -79,6 +79,36 @@ describe("agentctx status", () => {
     expect(out).toContain("llm extraction on");
   });
 
+  it("counts a _global preference only when its scope is global", async () => {
+    const db = openDatabase(t.env.dbPath);
+    try {
+      // Visible global preference — counted.
+      insertRecord(db, {
+        projectId: GLOBAL_PROJECT_ID,
+        type: "preference",
+        scope: "global",
+        source: "cli",
+        title: "Prefer tabs",
+        body: "Indent with tabs.",
+      });
+      // Mis-scoped row in the _global namespace — invisible to scoped reads,
+      // so status must not count it either.
+      insertRecord(db, {
+        projectId: GLOBAL_PROJECT_ID,
+        type: "preference",
+        scope: "project",
+        source: "cli",
+        title: "Stray preference",
+        body: "Written into _global with scope project.",
+      });
+    } finally {
+      db.close();
+    }
+
+    expect(await runStatus(t.env, [])).toBe(0);
+    expect(t.stdout.join("\n")).toContain("Global developer preferences: 1 active");
+  });
+
   it("counts superseded records as history, not as active context", async () => {
     const id = seed({ title: "Old decision", body: "Original." });
     const db = openDatabase(t.env.dbPath);
