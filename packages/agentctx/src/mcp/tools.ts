@@ -240,8 +240,7 @@ function ctxProject(ctx: ToolContext): unknown {
   const counts = ctx.db
     .prepare(
       `SELECT type, COUNT(*) AS n FROM records
-       WHERE superseded_at IS NULL
-         AND (project_id = @projectId OR (project_id = '${GLOBAL_PROJECT_ID}' AND scope = 'global'))
+       WHERE superseded_at IS NULL AND project_id = @projectId
        GROUP BY type`,
     )
     .all({ projectId: ctx.projectId }) as Array<{ type: string; n: number }>;
