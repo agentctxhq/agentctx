@@ -73,7 +73,7 @@ export function buildDigestSections(
   const prefs = currentRecords(
     db,
     GLOBAL_PROJECT_ID,
-    "type = 'preference' AND confidence != 'inferred'",
+    "type = 'preference' AND confidence = 'reinforced'",
     "score DESC, recorded_at DESC",
   );
   if (prefs.length > 0) {

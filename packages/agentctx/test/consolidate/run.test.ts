@@ -132,6 +132,14 @@ describe("agentctx consolidate", () => {
         body: "not yet reinforced",
         confidence: "inferred",
       });
+      seed({
+        projectId: GLOBAL_PROJECT_ID,
+        scope: "global",
+        type: "preference",
+        title: "Explicit but not reinforced preference",
+        body: "explicit only",
+        confidence: "explicit",
+      });
 
       expect(await runConsolidate(t.env)).toBe(0);
 
@@ -144,6 +152,7 @@ describe("agentctx consolidate", () => {
       expect(digest?.sections.handover).toContain("extraction pipeline");
       expect(digest?.sections.globalPreferences).toContain("Prefers arrow functions");
       expect(digest?.sections.globalPreferences).not.toContain("Unproven");
+      expect(digest?.sections.globalPreferences).not.toContain("Explicit but not reinforced");
       expect(digest?.sections.mcpHint).toContain("ctx_search");
 
       const total = Object.values(digest?.sections ?? {}).reduce(
