@@ -85,7 +85,15 @@ describe("hook post-tool-use", () => {
            WHERE re.record_id = ?`,
         )
         .all(stubs[0]?.id) as Array<{ kind: string; name: string }>;
-      expect(links).toEqual([{ kind: "file", name: "test/auth.test.ts" }]);
+      expect(links).toEqual([{ kind: "file", name: resolve(t.cwd, "test/auth.test.ts") }]);
+
+      const related = db
+        .prepare(
+          `SELECT re.record_id AS id FROM record_entities re JOIN nodes n ON n.id = re.entity_id
+           WHERE n.kind = 'file' AND n.name = ?`,
+        )
+        .all(resolve(t.cwd, "test/auth.test.ts")) as Array<{ id: string }>;
+      expect(related).toEqual([{ id: stubs[0]?.id }]);
     } finally {
       db.close();
     }
