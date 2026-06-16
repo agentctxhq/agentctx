@@ -53,7 +53,7 @@ export async function runPostToolUse(env: HookEnv, payload: HookPayload): Promis
     if (FILE_WRITE_TOOLS.has(payload.toolName)) {
       captureFileWrite(db, projectId, cwd, payload);
     } else if (payload.toolName === "Bash") {
-      captureBash(db, projectId, payload);
+      captureBash(db, projectId, cwd, payload);
     }
   } finally {
     db.close();
@@ -73,7 +73,7 @@ function captureFileWrite(
   upsertNode(db, projectId, "file", resolve(cwd, raw.trim()));
 }
 
-function captureBash(db: Database, projectId: string, payload: HookPayload): void {
+function captureBash(db: Database, projectId: string, cwd: string, payload: HookPayload): void {
   const command = payload.toolInput.command;
   if (typeof command !== "string" || command.trim().length === 0) {
     return;
@@ -95,13 +95,14 @@ function captureBash(db: Database, projectId: string, payload: HookPayload): voi
   if (errorLine === null) {
     return;
   }
-  insertBugfixStub(db, projectId, payload.sessionId, command, errorLine, output, isTest);
+  insertBugfixStub(db, projectId, cwd, payload.sessionId, command, errorLine, output, isTest);
 }
 
 /** ADR-012: error-pattern → `bugfix` candidate stub; LLM extraction fills the rationale. */
 function insertBugfixStub(
   db: Database,
   projectId: string,
+  cwd: string,
   sessionId: string | null,
   command: string,
   errorLine: string,
@@ -142,7 +143,7 @@ function insertBugfixStub(
 
   const file = SOURCE_FILE_RE.exec(output)?.[1];
   if (file !== undefined) {
-    linkRecordToEntity(db, inserted.id, upsertNode(db, projectId, "file", file));
+    linkRecordToEntity(db, inserted.id, upsertNode(db, projectId, "file", resolve(cwd, file)));
   }
 }
 
