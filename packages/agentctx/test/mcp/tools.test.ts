@@ -445,6 +445,13 @@ describe("ctx_project", () => {
     seed({ type: "profile", title: "Stack", body: "Runtime: Node.js" });
     seed({ type: "profile", title: "Commands", body: "npm test — vitest" });
     seed({ title: "A decision", body: "decided" });
+    seed({
+      projectId: GLOBAL_PROJECT_ID,
+      scope: "global",
+      type: "preference",
+      title: "Global preference",
+      body: "applies across projects",
+    });
     tmp.db
       .prepare(
         "INSERT INTO sessions (session_id, project_id, started_at, ended_at) VALUES (?, ?, ?, ?)",
