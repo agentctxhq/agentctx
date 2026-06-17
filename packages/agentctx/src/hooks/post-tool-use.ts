@@ -26,8 +26,6 @@ import type { HookPayload } from "./payload.js";
 
 const FILE_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
-const GIT_BRANCH_RE = /^git\s+(?:checkout\s+(?:-b\s+)?|switch\s+(?:-c\s+)?)([\w./-]+)/;
-
 const TEST_COMMAND_RE =
   /\b(?:vitest|jest|pytest|mocha|playwright\s+test|go\s+test|cargo\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test)\b/;
 
@@ -80,11 +78,9 @@ function captureBash(db: Database, projectId: string, cwd: string, payload: Hook
   }
   const output = responseText(payload.toolResponse);
 
-  // Reject flag-like captures (`--`, `-f`, `--track`): `git checkout -- <path>`
-  // and friends are not branch switches.
-  const branch = GIT_BRANCH_RE.exec(command.trim());
-  if (branch?.[1] !== undefined && !branch[1].startsWith("-")) {
-    upsertNode(db, projectId, "branch", branch[1]);
+  const branch = extractGitBranch(command);
+  if (branch !== null) {
+    upsertNode(db, projectId, "branch", branch);
     return;
   }
 
@@ -96,6 +92,33 @@ function captureBash(db: Database, projectId: string, cwd: string, payload: Hook
     return;
   }
   insertBugfixStub(db, projectId, cwd, payload.sessionId, command, errorLine, output, isTest);
+}
+
+function extractGitBranch(command: string): string | null {
+  const tokens = command.trim().split(/\s+/);
+  if (tokens[0] !== "git" || (tokens[1] !== "checkout" && tokens[1] !== "switch")) {
+    return null;
+  }
+
+  let index = 2;
+  if (
+    (tokens[1] === "checkout" && tokens[index] === "-b") ||
+    (tokens[1] === "switch" && tokens[index] === "-c")
+  ) {
+    index += 1;
+  }
+
+  for (; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--") {
+      return null;
+    }
+    if (!token.startsWith("-")) {
+      return token;
+    }
+  }
+
+  return null;
 }
 
 /** ADR-012: error-pattern → `bugfix` candidate stub; LLM extraction fills the rationale. */
