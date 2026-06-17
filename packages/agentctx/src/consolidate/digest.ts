@@ -56,7 +56,7 @@ export function buildDigestSections(
   );
   if (decisions.length > 0) {
     sections.decisions = truncateToTokens(
-      `Active decisions (agentctx):\n${decisions.map((r) => `- ${r.title}: ${firstLine(r.body)}`).join("\n")}`,
+      `Active decisions (agentctx):\n${decisions.map(decisionDigestLine).join("\n")}`,
       SECTION_BUDGET_TOKENS.decisions,
     );
   }
@@ -156,6 +156,15 @@ function recordCount(db: Database, projectId: string): number {
   return row.n;
 }
 
-function firstLine(body: string): string {
-  return body.split("\n", 1)[0] ?? body;
+function meaningfulLines(body: string): string[] {
+  return body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function decisionDigestLine(record: ContextRecord): string {
+  const [first, second] = meaningfulLines(record.body);
+  const detail = first === record.title ? second : first;
+  return detail === undefined ? `- ${record.title}` : `- ${record.title}: ${detail}`;
 }
