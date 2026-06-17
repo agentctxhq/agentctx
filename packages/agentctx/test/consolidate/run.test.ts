@@ -2,6 +2,8 @@ import type { Database } from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { saveConfig } from "../../src/config.js";
 import { runConsolidate } from "../../src/consolidate/run.js";
+import { ingestExtraction } from "../../src/extract/ingest.js";
+import type { ExtractionResult } from "../../src/extract/schema.js";
 import {
   SESSION_START_MAX_TOKENS,
   digestFilePath,
@@ -14,6 +16,19 @@ import { GLOBAL_PROJECT_ID, type NewRecord } from "../../src/storage/types.js";
 import { type TestEnv, makeTestEnv } from "../cli/helpers.js";
 
 const PROJECT = "proj-a";
+
+function emptyExtraction(overrides: Partial<ExtractionResult> = {}): ExtractionResult {
+  return {
+    decisions: [],
+    preferences: [],
+    conventions: [],
+    activeWork: null,
+    gotchas: [],
+    flushOk: false,
+    droppedEntries: 0,
+    ...overrides,
+  };
+}
 
 describe("agentctx consolidate", () => {
   let t: TestEnv;
@@ -163,6 +178,44 @@ describe("agentctx consolidate", () => {
       await runConsolidate(t.env);
       const digest = readDigestFile(digestFilePath(t.env.agentctxHome, PROJECT));
       expect(digest?.sections.handover).toContain("(unconfirmed)");
+    });
+
+    it("does not repeat extracted decision text in digest lines", async () => {
+      withDb((db) => {
+        ingestExtraction(
+          db,
+          PROJECT,
+          "s1",
+          emptyExtraction({
+            decisions: [
+              {
+                what: "Use SQLite for storage",
+                rationale: "No daemon",
+                supersedes: null,
+                confidence: "explicit",
+              },
+            ],
+          }),
+          () => {},
+        );
+      });
+
+      await runConsolidate(t.env);
+      const digest = readDigestFile(digestFilePath(t.env.agentctxHome, PROJECT));
+      expect(digest?.sections.decisions).toContain(
+        "- Use SQLite for storage: Rationale: No daemon",
+      );
+      expect(digest?.sections.decisions).not.toContain(
+        "Use SQLite for storage: Use SQLite for storage",
+      );
+    });
+
+    it("keeps distinct manual decision title/body details in digest lines", async () => {
+      seed({ type: "decision", title: "Use SQLite", body: "No daemon", confidence: "explicit" });
+
+      await runConsolidate(t.env);
+      const digest = readDigestFile(digestFilePath(t.env.agentctxHome, PROJECT));
+      expect(digest?.sections.decisions).toContain("- Use SQLite: No daemon");
     });
 
     it("truncates each section to its build budget", async () => {
