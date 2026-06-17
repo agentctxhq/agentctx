@@ -103,7 +103,7 @@ export function buildDigestSections(
 
   if (driftRow.n >= 2) {
     sections.driftHint = truncateToTokens(
-      `${driftRow.n} architectural decisions in the context store are not reflected in CLAUDE.md — run 'agentctx sync' to review.`,
+      `${driftRow.n} context records (decisions/conventions) are not reflected in CLAUDE.md — run 'agentctx sync' to review.`,
       SECTION_BUDGET_TOKENS.driftHint,
     );
   }

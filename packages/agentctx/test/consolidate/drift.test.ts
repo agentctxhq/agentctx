@@ -430,7 +430,43 @@ describe("consolidate drift integration", () => {
     const digest = readDigestFile(digestFilePath(t.env.agentctxHome, cwdProjectId));
     expect(digest?.sections.driftHint).toBeDefined();
     expect(digest?.sections.driftHint).toContain("agentctx sync");
-    expect(digest?.sections.driftHint).toMatch(/\d+ architectural/);
+    expect(digest?.sections.driftHint).toMatch(/\d+ context records/);
+  });
+
+  it("drift hint does not call convention-only candidates decisions", async () => {
+    const { resolveProjectId } = await import("../../src/storage/namespace.js");
+    const cwdProjectId = resolveProjectId(t.env.cwd);
+
+    writeFileSync(join(t.env.cwd, "CLAUDE.md"), "# Project\n\nWe use TypeScript and npm.");
+
+    const db = openDatabase(t.env.dbPath);
+    try {
+      insertRecord(db, {
+        projectId: cwdProjectId,
+        type: "convention",
+        title: "Prefix CLI tests with cli",
+        body: "CLI tests use the cli prefix",
+        source: "llm_extraction",
+        confidence: "explicit",
+      });
+      insertRecord(db, {
+        projectId: cwdProjectId,
+        type: "convention",
+        title: "Keep fixtures under testdata",
+        body: "Fixture files live under testdata",
+        source: "llm_extraction",
+        confidence: "explicit",
+      });
+    } finally {
+      db.close();
+    }
+
+    expect(await runConsolidate(t.env)).toBe(0);
+
+    const digest = readDigestFile(digestFilePath(t.env.agentctxHome, cwdProjectId));
+    expect(digest?.sections.driftHint).toContain("context records");
+    expect(digest?.sections.driftHint).toContain("agentctx sync");
+    expect(digest?.sections.driftHint).not.toContain("architectural decisions");
   });
 
   it("drift hint is absent when fewer than 2 drift candidates", async () => {
