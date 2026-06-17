@@ -49,16 +49,20 @@ describe("hook post-tool-use", () => {
   it("records git branch switches as branch entities", async () => {
     await t.run("post-tool-use", bash("git checkout -b feature/hooks", "Switched to a new branch"));
     await t.run("post-tool-use", bash("git switch main", "Switched to branch 'main'"));
+    await t.run("post-tool-use", bash("git checkout -f release/v1", ""));
+    await t.run("post-tool-use", bash("git switch --track origin/dev", ""));
+    await t.run("post-tool-use", bash("git switch --detach feature-preview", ""));
     expect(nodes()).toEqual([
+      { kind: "branch", name: "feature-preview" },
       { kind: "branch", name: "feature/hooks" },
       { kind: "branch", name: "main" },
+      { kind: "branch", name: "origin/dev" },
+      { kind: "branch", name: "release/v1" },
     ]);
   });
 
-  it("does not mistake git flags or pathspec separators for branch names", async () => {
+  it("does not mistake git pathspec separators for branch names", async () => {
     await t.run("post-tool-use", bash("git checkout -- src/app.ts", ""));
-    await t.run("post-tool-use", bash("git checkout -f main", ""));
-    await t.run("post-tool-use", bash("git switch --track origin/dev", ""));
     expect(nodes()).toEqual([]);
   });
 
