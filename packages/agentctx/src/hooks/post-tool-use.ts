@@ -110,6 +110,9 @@ function extractGitBranch(command: string): string | null {
 
   for (; index < tokens.length; index += 1) {
     const token = tokens[index];
+    if (token === undefined) {
+      continue;
+    }
     if (token === "--") {
       return null;
     }
