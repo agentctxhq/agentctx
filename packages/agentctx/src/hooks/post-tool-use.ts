@@ -167,7 +167,7 @@ function insertBugfixStub(
   }
   const inserted = insertRecord(db, record);
 
-  const file = SOURCE_FILE_RE.exec(output)?.[1];
+  const file = extractSourceFile(errorLine) ?? extractSourceFile(output);
   if (file !== undefined) {
     linkRecordToEntity(db, inserted.id, upsertNode(db, projectId, "file", resolve(cwd, file)));
   }
@@ -207,4 +207,8 @@ function firstLine(text: string): string {
 
 function clamp(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function extractSourceFile(text: string): string | undefined {
+  return SOURCE_FILE_RE.exec(text)?.[1];
 }
