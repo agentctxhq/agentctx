@@ -99,6 +99,33 @@ describe("hook post-tool-use", () => {
     }
   });
 
+  it("links a bugfix stub to the file on the failing line before earlier output paths", async () => {
+    const failure = {
+      stdout: [
+        "ok src/good.ts",
+        "FAIL src/bad.ts:10: expected true to be false",
+        "AssertionError: expected true to be false",
+      ].join("\n"),
+      stderr: "",
+    };
+    await t.run("post-tool-use", bash("npx vitest run src/**/*.test.ts", failure));
+
+    const db = t.openDb();
+    try {
+      const stubs = listRecords(db, t.projectId, { type: "bugfix" });
+      expect(stubs).toHaveLength(1);
+      const links = db
+        .prepare(
+          `SELECT n.kind, n.name FROM record_entities re JOIN nodes n ON n.id = re.entity_id
+           WHERE re.record_id = ?`,
+        )
+        .all(stubs[0]?.id) as Array<{ kind: string; name: string }>;
+      expect(links).toEqual([{ kind: "file", name: resolve(t.cwd, "src/bad.ts") }]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("captures hard errors from non-test commands", async () => {
     await t.run(
       "post-tool-use",
