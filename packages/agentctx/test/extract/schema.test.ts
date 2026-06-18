@@ -66,6 +66,11 @@ describe("parseExtraction (SPEC §6 schema validation)", () => {
     expect(result?.decisions).toHaveLength(1);
   });
 
+  it("handles single-line markdown-fenced output", () => {
+    const result = parseExtraction(`\`\`\`json ${JSON.stringify({ flush_ok: true })}\`\`\``);
+    expect(result?.flushOk).toBe(true);
+  });
+
   it("parses flush_ok with empty fields", () => {
     const result = parseExtraction(JSON.stringify({ flush_ok: true }));
     expect(result?.flushOk).toBe(true);
