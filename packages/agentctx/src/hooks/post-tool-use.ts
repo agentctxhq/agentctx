@@ -156,7 +156,7 @@ export function responseText(response: unknown): string {
     return "";
   }
   const parts: string[] = [];
-  for (const key of ["stdout", "stderr", "output", "error", "interrupted"] as const) {
+  for (const key of ["stdout", "stderr", "output", "error"] as const) {
     const value = (response as Record<string, unknown>)[key];
     if (typeof value === "string" && value.length > 0) {
       parts.push(value);

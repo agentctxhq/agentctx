@@ -151,5 +151,6 @@ describe("responseText", () => {
     expect(responseText(null)).toBe("");
     expect(responseText(42)).toBe("");
     expect(responseText({ stdout: 7 })).toBe("");
+    expect(responseText({ interrupted: true })).toBe("");
   });
 });
