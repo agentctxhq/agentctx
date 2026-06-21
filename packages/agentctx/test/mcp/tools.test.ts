@@ -176,6 +176,29 @@ describe("ctx_search", () => {
     expect(results.map((r) => r.id)).toEqual([linked.id]);
   });
 
+  it("treats an empty file filter as absent (unfiltered search)", () => {
+    const linked = seed({ title: "Auth flow decision", body: "JWT in auth module" });
+    const unrelated = seed({ title: "Unrelated auth note", body: "JWT elsewhere" });
+    const filePath = resolve(cwd, "src/auth.ts");
+    linkRecordToEntity(tmp.db, linked.id, upsertNode(tmp.db, PROJECT, "file", filePath));
+
+    const omitted = call("ctx_search", { query: "JWT auth" }).payload as {
+      results: Array<{ id: string }>;
+    };
+    const emptyFilter = call("ctx_search", { query: "JWT auth", file: "" }).payload as {
+      results: Array<{ id: string }>;
+    };
+    const blankFilter = call("ctx_search", { query: "JWT auth", file: "   " }).payload as {
+      results: Array<{ id: string }>;
+    };
+
+    const ids = (r: { results: Array<{ id: string }> }) => r.results.map((hit) => hit.id).sort();
+    // An empty/whitespace file filter must search unfiltered, not return zero results.
+    expect(ids(emptyFilter)).toEqual(ids(omitted));
+    expect(ids(blankFilter)).toEqual(ids(omitted));
+    expect(ids(emptyFilter)).toEqual([linked.id, unrelated.id].sort());
+  });
+
   it("marks degraded like-search when FTS5 is unavailable", () => {
     seed({ title: "Fallback fact", body: "search should still work" });
     tmp.db.exec("DROP TABLE records_fts");
