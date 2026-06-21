@@ -49,16 +49,20 @@ describe("hook post-tool-use", () => {
   it("records git branch switches as branch entities", async () => {
     await t.run("post-tool-use", bash("git checkout -b feature/hooks", "Switched to a new branch"));
     await t.run("post-tool-use", bash("git switch main", "Switched to branch 'main'"));
+    await t.run("post-tool-use", bash("git checkout -f release/v1", ""));
+    await t.run("post-tool-use", bash("git switch --track origin/dev", ""));
+    await t.run("post-tool-use", bash("git switch --detach feature-preview", ""));
     expect(nodes()).toEqual([
+      { kind: "branch", name: "feature-preview" },
       { kind: "branch", name: "feature/hooks" },
       { kind: "branch", name: "main" },
+      { kind: "branch", name: "origin/dev" },
+      { kind: "branch", name: "release/v1" },
     ]);
   });
 
-  it("does not mistake git flags or pathspec separators for branch names", async () => {
+  it("does not mistake git pathspec separators for branch names", async () => {
     await t.run("post-tool-use", bash("git checkout -- src/app.ts", ""));
-    await t.run("post-tool-use", bash("git checkout -f main", ""));
-    await t.run("post-tool-use", bash("git switch --track origin/dev", ""));
     expect(nodes()).toEqual([]);
   });
 
@@ -85,7 +89,42 @@ describe("hook post-tool-use", () => {
            WHERE re.record_id = ?`,
         )
         .all(stubs[0]?.id) as Array<{ kind: string; name: string }>;
-      expect(links).toEqual([{ kind: "file", name: "test/auth.test.ts" }]);
+      expect(links).toEqual([{ kind: "file", name: resolve(t.cwd, "test/auth.test.ts") }]);
+
+      const related = db
+        .prepare(
+          `SELECT re.record_id AS id FROM record_entities re JOIN nodes n ON n.id = re.entity_id
+           WHERE n.kind = 'file' AND n.name = ?`,
+        )
+        .all(resolve(t.cwd, "test/auth.test.ts")) as Array<{ id: string }>;
+      expect(related).toEqual([{ id: stubs[0]?.id }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("links a bugfix stub to the file on the failing line before earlier output paths", async () => {
+    const failure = {
+      stdout: [
+        "ok src/good.ts",
+        "FAIL src/bad.ts:10: expected true to be false",
+        "AssertionError: expected true to be false",
+      ].join("\n"),
+      stderr: "",
+    };
+    await t.run("post-tool-use", bash("npx vitest run src/**/*.test.ts", failure));
+
+    const db = t.openDb();
+    try {
+      const stubs = listRecords(db, t.projectId, { type: "bugfix" });
+      expect(stubs).toHaveLength(1);
+      const links = db
+        .prepare(
+          `SELECT n.kind, n.name FROM record_entities re JOIN nodes n ON n.id = re.entity_id
+           WHERE re.record_id = ?`,
+        )
+        .all(stubs[0]?.id) as Array<{ kind: string; name: string }>;
+      expect(links).toEqual([{ kind: "file", name: resolve(t.cwd, "src/bad.ts") }]);
     } finally {
       db.close();
     }
@@ -143,5 +182,6 @@ describe("responseText", () => {
     expect(responseText(null)).toBe("");
     expect(responseText(42)).toBe("");
     expect(responseText({ stdout: 7 })).toBe("");
+    expect(responseText({ interrupted: true })).toBe("");
   });
 });

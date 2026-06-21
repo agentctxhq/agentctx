@@ -26,8 +26,6 @@ import type { HookPayload } from "./payload.js";
 
 const FILE_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
-const GIT_BRANCH_RE = /^git\s+(?:checkout\s+(?:-b\s+)?|switch\s+(?:-c\s+)?)([\w./-]+)/;
-
 const TEST_COMMAND_RE =
   /\b(?:vitest|jest|pytest|mocha|playwright\s+test|go\s+test|cargo\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test)\b/;
 
@@ -53,7 +51,7 @@ export async function runPostToolUse(env: HookEnv, payload: HookPayload): Promis
     if (FILE_WRITE_TOOLS.has(payload.toolName)) {
       captureFileWrite(db, projectId, cwd, payload);
     } else if (payload.toolName === "Bash") {
-      captureBash(db, projectId, payload);
+      captureBash(db, projectId, cwd, payload);
     }
   } finally {
     db.close();
@@ -73,18 +71,16 @@ function captureFileWrite(
   upsertNode(db, projectId, "file", resolve(cwd, raw.trim()));
 }
 
-function captureBash(db: Database, projectId: string, payload: HookPayload): void {
+function captureBash(db: Database, projectId: string, cwd: string, payload: HookPayload): void {
   const command = payload.toolInput.command;
   if (typeof command !== "string" || command.trim().length === 0) {
     return;
   }
   const output = responseText(payload.toolResponse);
 
-  // Reject flag-like captures (`--`, `-f`, `--track`): `git checkout -- <path>`
-  // and friends are not branch switches.
-  const branch = GIT_BRANCH_RE.exec(command.trim());
-  if (branch?.[1] !== undefined && !branch[1].startsWith("-")) {
-    upsertNode(db, projectId, "branch", branch[1]);
+  const branch = extractGitBranch(command);
+  if (branch !== null) {
+    upsertNode(db, projectId, "branch", branch);
     return;
   }
 
@@ -95,13 +91,44 @@ function captureBash(db: Database, projectId: string, payload: HookPayload): voi
   if (errorLine === null) {
     return;
   }
-  insertBugfixStub(db, projectId, payload.sessionId, command, errorLine, output, isTest);
+  insertBugfixStub(db, projectId, cwd, payload.sessionId, command, errorLine, output, isTest);
+}
+
+function extractGitBranch(command: string): string | null {
+  const tokens = command.trim().split(/\s+/);
+  if (tokens[0] !== "git" || (tokens[1] !== "checkout" && tokens[1] !== "switch")) {
+    return null;
+  }
+
+  let index = 2;
+  if (
+    (tokens[1] === "checkout" && tokens[index] === "-b") ||
+    (tokens[1] === "switch" && tokens[index] === "-c")
+  ) {
+    index += 1;
+  }
+
+  for (; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === undefined) {
+      continue;
+    }
+    if (token === "--") {
+      return null;
+    }
+    if (!token.startsWith("-")) {
+      return token;
+    }
+  }
+
+  return null;
 }
 
 /** ADR-012: error-pattern → `bugfix` candidate stub; LLM extraction fills the rationale. */
 function insertBugfixStub(
   db: Database,
   projectId: string,
+  cwd: string,
   sessionId: string | null,
   command: string,
   errorLine: string,
@@ -140,9 +167,9 @@ function insertBugfixStub(
   }
   const inserted = insertRecord(db, record);
 
-  const file = SOURCE_FILE_RE.exec(output)?.[1];
+  const file = extractSourceFile(errorLine) ?? extractSourceFile(output);
   if (file !== undefined) {
-    linkRecordToEntity(db, inserted.id, upsertNode(db, projectId, "file", file));
+    linkRecordToEntity(db, inserted.id, upsertNode(db, projectId, "file", resolve(cwd, file)));
   }
 }
 
@@ -155,7 +182,7 @@ export function responseText(response: unknown): string {
     return "";
   }
   const parts: string[] = [];
-  for (const key of ["stdout", "stderr", "output", "error", "interrupted"] as const) {
+  for (const key of ["stdout", "stderr", "output", "error"] as const) {
     const value = (response as Record<string, unknown>)[key];
     if (typeof value === "string" && value.length > 0) {
       parts.push(value);
@@ -180,4 +207,8 @@ function firstLine(text: string): string {
 
 function clamp(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function extractSourceFile(text: string): string | undefined {
+  return SOURCE_FILE_RE.exec(text)?.[1];
 }

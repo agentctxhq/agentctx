@@ -11,7 +11,8 @@ import { parseArgs } from "node:util";
 import { loadConfig } from "../config.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
-import { GLOBAL_PROJECT_ID, RECORD_TYPES } from "../storage/types.js";
+import { GLOBAL_VISIBLE_SQL } from "../storage/records.js";
+import { RECORD_TYPES } from "../storage/types.js";
 import type { CliEnv } from "./env.js";
 
 export const STATUS_USAGE = `Usage: agentctx status
@@ -109,9 +110,9 @@ function globalPreferenceCount(db: ReturnType<typeof openDatabase>): number {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS n FROM records
-       WHERE project_id = ? AND type = 'preference' AND superseded_at IS NULL`,
+       WHERE ${GLOBAL_VISIBLE_SQL} AND type = 'preference' AND superseded_at IS NULL`,
     )
-    .get(GLOBAL_PROJECT_ID) as { n: number };
+    .get() as { n: number };
   return row.n;
 }
 

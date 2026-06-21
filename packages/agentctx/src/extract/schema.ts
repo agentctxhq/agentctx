@@ -93,8 +93,8 @@ export function parseExtraction(raw: string): ExtractionResult | null {
 
 function stripFences(raw: string): string {
   const trimmed = raw.trim();
-  const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/.exec(trimmed);
-  return fenced?.[1] ?? trimmed;
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
+  return fenced?.[1]?.trim() ?? trimmed;
 }
 
 function entryArray<T>(value: unknown, parse: (entry: unknown) => T | null): T[] {
