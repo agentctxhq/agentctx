@@ -8,7 +8,7 @@ import { ulid } from "../storage/ulid.js";
 
 export type NodeKind = "file" | "symbol" | "package" | "module" | "branch";
 
-/** Insert-or-fetch a node by its unique name. Returns the node id. */
+/** Insert-or-fetch a node by its `(project_id, name)`. Returns the node id. */
 export function upsertNode(db: Database, projectId: string, kind: NodeKind, name: string): string {
   db.prepare("INSERT OR IGNORE INTO nodes (id, project_id, kind, name) VALUES (?, ?, ?, ?)").run(
     ulid(),
@@ -16,9 +16,12 @@ export function upsertNode(db: Database, projectId: string, kind: NodeKind, name
     kind,
     name,
   );
-  const row = db.prepare("SELECT id FROM nodes WHERE name = ?").get(name) as
-    | { id: string }
-    | undefined;
+  // Scope the lookup to the project: nodes are unique per `(project_id, name)`,
+  // so two projects sharing a node name (e.g. a `main` branch) must not resolve
+  // to each other's node and cross-link their records.
+  const row = db
+    .prepare("SELECT id FROM nodes WHERE project_id = ? AND name = ?")
+    .get(projectId, name) as { id: string } | undefined;
   if (row === undefined) {
     throw new Error(`node "${name}" vanished after upsert`);
   }
