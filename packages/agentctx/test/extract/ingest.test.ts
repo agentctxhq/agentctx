@@ -153,6 +153,34 @@ describe("ingestExtraction (SPEC §6 ingest)", () => {
     expect(logs.some((m) => m.includes("no-such-id"))).toBe(true);
   });
 
+  it("ignores a supersedes id from a different namespace", () => {
+    const otherProjectOld = insertRecord(db, {
+      projectId: "other-project",
+      type: "decision",
+      title: "Use REST",
+      body: "REST everywhere",
+      source: "mcp_tool",
+    });
+    const logs: string[] = [];
+    const stats = ingestExtraction(
+      db,
+      PROJECT,
+      "s1",
+      emptyResult({
+        decisions: [
+          { what: "Use gRPC", rationale: null, supersedes: otherProjectOld.id, confidence: "explicit" },
+        ],
+      }),
+      (m) => logs.push(m),
+    );
+    expect(stats.written).toBe(1);
+    expect(logs.some((m) => m.includes(otherProjectOld.id))).toBe(true);
+    
+    // The other project's record should NOT be superseded
+    const otherRecords = listRecords(db, "other-project", { type: "decision", includeSuperseded: true });
+    expect(otherRecords[0]?.supersededAt).toBeNull();
+  });
+
   it("drops oversized entries (SPEC §6)", () => {
     const stats = ingestExtraction(
       db,

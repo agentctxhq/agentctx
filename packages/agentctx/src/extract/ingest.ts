@@ -163,7 +163,7 @@ function ingestCandidate(
   // hallucinated id must not sink the new fact with it.
   if (candidate.supersedes !== undefined) {
     const target = getRecord(db, candidate.supersedes);
-    if (target !== null) {
+    if (target !== null && target.projectId === targetProjectId) {
       record.supersedes = candidate.supersedes;
     } else {
       log(`ingest: ignoring invalid supersedes target ${candidate.supersedes}`);
