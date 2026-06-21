@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { openDatabase } from "../storage/db.js";
 import { countProjectRecords, deleteProjectData } from "../storage/maintenance.js";
-import { resolveProjectId } from "../storage/namespace.js";
+import { resolveProjectId, shortProjectId } from "../storage/namespace.js";
 import type { CliEnv } from "./env.js";
 
 export const RESET_USAGE = `Usage: agentctx reset [options]
@@ -58,7 +58,7 @@ export async function runReset(env: CliEnv, args: string[]): Promise<number> {
     const result = deleteProjectData(db, projectId);
     env.io.out(
       `✓ deleted ${result.records} record(s), ${result.nodes} node(s), ` +
-        `${result.edges} edge(s), ${result.sessions} session(s) for project ${projectId.slice(0, 12)}…`,
+        `${result.edges} edge(s), ${result.sessions} session(s) for project ${shortProjectId(projectId)}`,
     );
   } finally {
     db.close();

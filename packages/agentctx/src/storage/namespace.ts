@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 export { GLOBAL_PROJECT_ID } from "./types.js";
+export const PROJECT_ID_DISPLAY_LEN = 12;
 
 /**
  * Normalize a git remote URL to a canonical `host/path` form: unifies
@@ -67,6 +68,10 @@ export function resolveProjectId(cwd: string = process.cwd()): string {
   }
   const repoRoot = git(["rev-parse", "--show-toplevel"], cwd);
   return projectIdFromPath(repoRoot ?? cwd);
+}
+
+export function shortProjectId(projectId: string): string {
+  return `${projectId.slice(0, PROJECT_ID_DISPLAY_LEN)}…`;
 }
 
 function git(args: string[], cwd: string): string | null {

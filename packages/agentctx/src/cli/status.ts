@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { loadConfig } from "../config.js";
 import { openDatabase } from "../storage/db.js";
-import { resolveProjectId } from "../storage/namespace.js";
+import { resolveProjectId, shortProjectId } from "../storage/namespace.js";
 import { GLOBAL_VISIBLE_SQL } from "../storage/records.js";
 import { RECORD_TYPES } from "../storage/types.js";
 import type { CliEnv } from "./env.js";
@@ -50,7 +50,7 @@ export async function runStatus(env: CliEnv, args: string[]): Promise<number> {
     const all = sessionTotals(db, null);
     const config = loadConfig(env.configPath);
 
-    env.io.out(`agentctx status — project ${projectId.slice(0, 12)}… (${env.cwd})`);
+    env.io.out(`agentctx status — project ${shortProjectId(projectId)} (${env.cwd})`);
     env.io.out("");
     env.io.out("Context records (active):");
     let total = 0;

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  PROJECT_ID_DISPLAY_LEN,
   normalizeGitRemoteUrl,
   projectIdFromPath,
   projectIdFromRemote,
+  shortProjectId,
 } from "../../src/storage/namespace.js";
 
 describe("normalizeGitRemoteUrl", () => {
@@ -45,5 +47,13 @@ describe("project ids", () => {
     const fromPath = projectIdFromPath("/home/dev/projects/repo");
     expect(fromPath).toMatch(/^[0-9a-f]{64}$/);
     expect(fromPath).not.toBe(projectIdFromRemote("github.com/org/repo"));
+  });
+});
+
+describe("shortProjectId", () => {
+  it("renders the first 12 hex chars plus an ellipsis", () => {
+    const projectId = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    expect(shortProjectId(projectId)).toBe("0123456789ab…");
+    expect(shortProjectId(projectId)).toHaveLength(PROJECT_ID_DISPLAY_LEN + 1);
   });
 });
