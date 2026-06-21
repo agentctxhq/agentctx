@@ -8,6 +8,7 @@
  */
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
+import { SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX } from "../mcp/tools.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { searchRecords } from "../storage/search.js";
@@ -18,10 +19,7 @@ export const SEARCH_USAGE = `Usage: agentctx search <query> [options]
 
 Options:
   --type <type>   restrict to one record type (${RECORD_TYPES.join(", ")})
-  --limit <n>     maximum results (default 10, max 50)`;
-
-const LIMIT_DEFAULT = 10;
-const LIMIT_MAX = 50;
+  --limit <n>     maximum results (default ${SEARCH_LIMIT_DEFAULT}, max ${SEARCH_LIMIT_MAX})`;
 
 export async function runSearch(env: CliEnv, args: string[]): Promise<number> {
   if (args.includes("--help")) {
@@ -53,11 +51,11 @@ export async function runSearch(env: CliEnv, args: string[]): Promise<number> {
     }
     type = values.type as RecordType;
   }
-  let limit = LIMIT_DEFAULT;
+  let limit = SEARCH_LIMIT_DEFAULT;
   if (values.limit !== undefined) {
     const parsed = Number(values.limit);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > LIMIT_MAX) {
-      env.io.err(`agentctx search: --limit must be an integer between 1 and ${LIMIT_MAX}`);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > SEARCH_LIMIT_MAX) {
+      env.io.err(`agentctx search: --limit must be an integer between 1 and ${SEARCH_LIMIT_MAX}`);
       return 1;
     }
     limit = parsed;

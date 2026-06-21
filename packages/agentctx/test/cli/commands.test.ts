@@ -139,6 +139,35 @@ describe("agentctx config", () => {
   });
 });
 
+describe("agentctx search", () => {
+  it("rejects limits above the shared MCP/SPEC cap", async () => {
+    await main(["init", "--no-profile", "--no-mcp"], t.env);
+
+    expect(await main(["search", "caching", "--limit", "16"], t.env)).toBe(1);
+    expect(t.stderr.join("\n")).toContain("between 1 and 15");
+  });
+
+  it("accepts the documented max limit", async () => {
+    await main(["init", "--no-profile", "--no-mcp"], t.env);
+    const projectId = resolveProjectId(t.env.cwd);
+
+    const db = openDatabase(t.env.dbPath);
+    for (let i = 0; i < 20; i++) {
+      insertRecord(db, {
+        projectId,
+        type: "decision",
+        title: `Decision ${i}`,
+        body: `caching detail ${i}`,
+        source: "cli",
+      });
+    }
+    db.close();
+
+    expect(await main(["search", "caching", "--limit", "15"], t.env)).toBe(0);
+    expect(t.stdout.filter((line) => line.includes("Decision "))).toHaveLength(15);
+  });
+});
+
 describe("agentctx reset", () => {
   it("deletes only the current project's records, after confirmation", async () => {
     await main(["init", "--no-profile", "--no-mcp"], t.env);
