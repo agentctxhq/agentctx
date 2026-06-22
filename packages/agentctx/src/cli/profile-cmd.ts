@@ -27,10 +27,12 @@ export async function runProfile(env: CliEnv, args: string[]): Promise<number> {
   const [command, ...rest] = args;
   switch (command) {
     case undefined:
+      env.io.err(PROFILE_USAGE);
+      return 1;
     case "--help":
     case "help":
       env.io.out(PROFILE_USAGE);
-      return command === undefined ? 1 : 0;
+      return 0;
     case "show":
       return profileShow(env);
     case "edit":
