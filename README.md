@@ -50,6 +50,8 @@ agentctx show <id>    pretty-print a full record
 agentctx export       render the context store as organized Markdown
 agentctx profile      show/edit/clear global developer preferences
 agentctx sync         compare context store against CLAUDE.md, propose additions
+agentctx config       get/set settings (llm, embeddings, modelTier, reinforceThreshold)
+agentctx reset        delete the current project's context records (asks first)
 ```
 
 ---
