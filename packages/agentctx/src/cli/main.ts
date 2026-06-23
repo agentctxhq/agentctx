@@ -35,8 +35,8 @@ Commands:
   mcp          MCP stdio server exposing the ctx_* tools (started by Claude Code)
   hook <event> hook dispatcher invoked by Claude Code (not for direct use)
 
-Run any command with --help semantics via the docs:
-  https://github.com/agentctxhq/agentctx`;
+Run \`agentctx <command> --help\` for command-specific options.
+Docs: https://github.com/agentctxhq/agentctx`;
 
 export async function main(argv: string[], env: CliEnv = defaultEnv()): Promise<number> {
   const [command, ...args] = argv;

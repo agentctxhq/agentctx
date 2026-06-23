@@ -230,6 +230,7 @@ describe("dispatch", () => {
   it("prints help and version without touching the filesystem", async () => {
     expect(await main([], t.env)).toBe(0);
     expect(await main(["--version"], t.env)).toBe(0);
+    expect(t.stdout[0]).toContain("Run `agentctx <command> --help` for command-specific options.");
     expect(existsSync(t.env.agentctxHome)).toBe(false);
   });
 
