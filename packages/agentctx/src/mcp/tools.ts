@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { Database } from "better-sqlite3";
 import { buildSyncReport } from "../consolidate/drift.js";
+import { describeError } from "../errors.js";
 import { PROFILE_TITLES } from "../profile/detect.js";
 import { getRecord, insertRecord, listRecords, supersedeRecord } from "../storage/records.js";
 import { searchRecords } from "../storage/search.js";
@@ -461,7 +462,7 @@ export function callTool(
       return { payload: { error: err.message }, isError: true };
     }
     return {
-      payload: { error: err instanceof Error ? err.message : String(err) },
+      payload: { error: describeError(err) },
       isError: true,
     };
   }

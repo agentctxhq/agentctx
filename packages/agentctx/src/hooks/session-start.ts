@@ -12,6 +12,7 @@
  * re-counted in `sessions.tokens_injected` because it is re-paid.
  */
 import { existsSync } from "node:fs";
+import { describeError } from "../errors.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { listRecords } from "../storage/records.js";
@@ -60,7 +61,7 @@ function profileOnlyFallback(env: HookEnv, projectId: string): string {
       db.close();
     }
   } catch (error) {
-    env.log(`session-start: profile fallback failed: ${describe(error)}`);
+    env.log(`session-start: profile fallback failed: ${describeError(error)}`);
     return "";
   }
 }
@@ -83,10 +84,6 @@ function accountInjection(
       db.close();
     }
   } catch (error) {
-    env.log(`session-start: token accounting failed: ${describe(error)}`);
+    env.log(`session-start: token accounting failed: ${describeError(error)}`);
   }
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -10,6 +10,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_FILE_NAME, DEFAULT_CONFIG, loadConfig } from "../config.js";
+import { describeError } from "../errors.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { dedupFilePath } from "./dedup.js";
@@ -51,7 +52,7 @@ export async function runSessionEnd(env: HookEnv, payload: HookPayload): Promise
           db.close();
         }
       } catch (error) {
-        env.log(`session-end: bookkeeping failed: ${describe(error)}`);
+        env.log(`session-end: bookkeeping failed: ${describeError(error)}`);
       }
     }
   }
@@ -78,8 +79,4 @@ function effectiveConfig(env: HookEnv): { llm: boolean } {
   } catch {
     return DEFAULT_CONFIG;
   }
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

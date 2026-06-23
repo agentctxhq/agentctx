@@ -1,3 +1,5 @@
+import { describeError } from "../errors.js";
+
 /**
  * Node support matrix (OQ-1, ADR-003).
  *
@@ -44,7 +46,7 @@ export function unsupportedNodeReason(version: string = process.versions.node): 
  * missing binding (no prebuild existed and install skipped the compile).
  */
 export function describeNativeLoadError(error: unknown): string | null {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = describeError(error);
   const abiMismatch = message.includes("NODE_MODULE_VERSION");
   // ERR_DLOPEN_FAILED is raised for any native module; only claim it when
   // the message names better-sqlite3 — generic advice would be wrong advice.

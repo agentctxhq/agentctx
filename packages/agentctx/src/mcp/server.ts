@@ -13,6 +13,7 @@
  * nothing throws raw into the channel.
  */
 import { createInterface } from "node:readline";
+import { describeError } from "../errors.js";
 import { VERSION } from "../version.js";
 import { type ToolContext, type ToolDefinition, callTool } from "./tools.js";
 
@@ -72,7 +73,7 @@ export function serveMcp(options: McpServerOptions): Promise<void> {
       } catch (err) {
         // Defense in depth — handlers are expected to capture their own
         // failures; anything that escapes is logged and answered, never thrown.
-        log(`agentctx mcp: ${err instanceof Error ? err.message : String(err)}`);
+        log(`agentctx mcp: ${describeError(err)}`);
         send(error(idOf(message), INVALID_REQUEST, "internal error"));
       }
     });

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import type { CliEnv } from "../cli/env.js";
 import { loadConfig } from "../config.js";
+import { describeError } from "../errors.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { type FetchLike, requestCompletion } from "./api.js";
@@ -59,7 +60,7 @@ export async function runExtract(
   try {
     return await extract(env, sessionId, transcriptPath, values["no-llm"] === true, deps, log);
   } catch (error) {
-    log(`extract failed for session ${sessionId}: ${describe(error)}`);
+    log(`extract failed for session ${sessionId}: ${describeError(error)}`);
     return 0; // never a session error (SPEC §6)
   }
 }
@@ -189,8 +190,4 @@ function makeLog(env: CliEnv): (message: string) => void {
       /* stderr is ignored when running detached */
     }
   };
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

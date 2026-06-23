@@ -14,6 +14,7 @@
  * count-threshold transition itself runs in `agentctx consolidate`.
  */
 import type { Database } from "better-sqlite3";
+import { describeError } from "../errors.js";
 import { getRecord, insertRecord } from "../storage/records.js";
 import {
   BODY_MAX_CHARS,
@@ -175,7 +176,7 @@ function ingestCandidate(
     stats.written++;
   } catch (error) {
     stats.dropped++;
-    log(`ingest: dropped ${candidate.type} entry: ${describe(error)}`);
+    log(`ingest: dropped ${candidate.type} entry: ${describeError(error)}`);
   }
 }
 
@@ -225,8 +226,4 @@ function clampTitle(text: string): string {
 
 function bullets(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

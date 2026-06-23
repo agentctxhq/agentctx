@@ -6,6 +6,8 @@
  * agentctx must never break a Claude Code session (issue 2/7). The hook
  * dispatcher and everything else load lazily.
  */
+import { describeError } from "./errors.js";
+
 const argv = process.argv.slice(2);
 
 if (argv[0] === "hook") {
@@ -24,7 +26,7 @@ if (argv[0] === "hook") {
       process.exitCode = code;
     })
     .catch((error) => {
-      console.error(`agentctx: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`agentctx: ${describeError(error)}`);
       process.exitCode = 1;
     });
 }

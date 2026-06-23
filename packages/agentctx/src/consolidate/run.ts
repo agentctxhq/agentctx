@@ -19,6 +19,7 @@ import { existsSync } from "node:fs";
 import type { Database } from "better-sqlite3";
 import type { CliEnv } from "../cli/env.js";
 import { loadConfig } from "../config.js";
+import { describeError } from "../errors.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { GLOBAL_PROJECT_ID, type RecordType } from "../storage/types.js";
@@ -54,7 +55,7 @@ export async function runConsolidate(env: CliEnv, _args: string[] = []): Promise
     }
   } catch (error) {
     // Detached background pass: never escalate (SPEC §8 rung 5).
-    env.io.err(`agentctx consolidate: ${error instanceof Error ? error.message : String(error)}`);
+    env.io.err(`agentctx consolidate: ${describeError(error)}`);
   }
   return 0;
 }

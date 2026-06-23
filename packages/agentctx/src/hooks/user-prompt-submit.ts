@@ -8,6 +8,7 @@
  * Every failure path degrades to "inject nothing" — never an error.
  */
 import { existsSync } from "node:fs";
+import { describeError } from "../errors.js";
 import { openDatabase } from "../storage/db.js";
 import { resolveProjectId } from "../storage/namespace.js";
 import { type SearchHit, searchRecords } from "../storage/search.js";
@@ -65,7 +66,7 @@ export async function runUserPromptSubmit(env: HookEnv, payload: HookPayload): P
           at: env.now().toISOString(),
         });
       } catch (error) {
-        env.log(`user-prompt-submit: token accounting failed: ${describe(error)}`);
+        env.log(`user-prompt-submit: token accounting failed: ${describeError(error)}`);
       }
     }
   } finally {
@@ -109,8 +110,4 @@ export function formatInjection(
     return { text: "", ids: [], tokens: 0 };
   }
   return { text, ids, tokens: estimateTokens(text) };
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
