@@ -104,6 +104,24 @@ describe("agentctx extract", () => {
     }
   });
 
+  it("attributes the cost to the project even with no prior injection", async () => {
+    // Sparse session: the cost row is the first DB write (no SessionStart /
+    // UserPromptSubmit injection ever ran), so project_id must be filled here
+    // or `status` drops the cost from the per-project total (#66).
+    const calls: MockCall[] = [];
+    expect(await run({ fetchFn: mockFetch(calls), apiKey: "key" })).toBe(0);
+
+    const db = openDatabase(t.env.dbPath);
+    try {
+      const session = db
+        .prepare("SELECT project_id FROM sessions WHERE session_id = 's1'")
+        .get() as { project_id: string | null };
+      expect(session.project_id).toBe(resolveProjectId(t.env.cwd));
+    } finally {
+      db.close();
+    }
+  });
+
   it("degrades cleanly without an API key (SPEC §8 rung 3)", async () => {
     const calls: MockCall[] = [];
     expect(await run({ fetchFn: mockFetch(calls), apiKey: undefined })).toBe(0);
