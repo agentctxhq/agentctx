@@ -120,13 +120,13 @@ async function extract(
 
   const db = openDatabase(env.dbPath);
   try {
-    recordCost(db, sessionId, totalCost);
+    const projectId = sessionProjectId(db, sessionId) ?? resolveProjectId(env.cwd);
+    recordCost(db, sessionId, projectId, totalCost);
     const result = parseExtraction(responseText);
     if (result === null) {
       log(`extract: unparseable model output for session ${sessionId} — skipped`);
       return 0;
     }
-    const projectId = sessionProjectId(db, sessionId) ?? resolveProjectId(env.cwd);
     const stats = ingestExtraction(db, projectId, sessionId, result, log);
     logStats(log, sessionId, stats, totalCost, result.flushOk);
   } finally {
@@ -135,13 +135,27 @@ async function extract(
   return 0;
 }
 
-/** Self-accounting (SPEC §3.1, §7): cost lands on the session row. */
-function recordCost(db: ReturnType<typeof openDatabase>, sessionId: string, cost: number): void {
+/**
+ * Self-accounting (SPEC §3.1, §7): cost lands on the session row, attributed to
+ * its project. When the cost row is the session's first DB write (a sparse
+ * session that never triggered a SessionStart/UserPromptSubmit injection),
+ * `project_id` would otherwise stay NULL and `status` would drop the cost from
+ * the per-project total. Fill it here, but never clobber a value an injection
+ * already set.
+ */
+function recordCost(
+  db: ReturnType<typeof openDatabase>,
+  sessionId: string,
+  projectId: string,
+  cost: number,
+): void {
   db.prepare(
-    `INSERT INTO sessions (session_id, extraction_cost_usd) VALUES (@sessionId, @cost)
+    `INSERT INTO sessions (session_id, project_id, extraction_cost_usd)
+       VALUES (@sessionId, @projectId, @cost)
      ON CONFLICT(session_id) DO UPDATE SET
-       extraction_cost_usd = extraction_cost_usd + @cost`,
-  ).run({ sessionId, cost });
+       extraction_cost_usd = extraction_cost_usd + @cost,
+       project_id = COALESCE(project_id, @projectId)`,
+  ).run({ sessionId, projectId, cost });
 }
 
 function sessionProjectId(db: ReturnType<typeof openDatabase>, sessionId: string): string | null {
