@@ -13,6 +13,7 @@
  * nothing throws raw into the channel.
  */
 import { createInterface } from "node:readline";
+import { isJsonObject } from "../claude/json-file.js";
 import { VERSION } from "../version.js";
 import { type ToolContext, type ToolDefinition, callTool } from "./tools.js";
 
@@ -82,13 +83,13 @@ export function serveMcp(options: McpServerOptions): Promise<void> {
 
 /** Returns the response to write, or null for notifications. */
 function handleMessage(message: unknown, options: McpServerOptions): JsonRpcResponse | null {
-  if (!isObject(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+  if (!isJsonObject(message) || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
     return error(idOf(message), INVALID_REQUEST, "expected a JSON-RPC 2.0 request");
   }
 
   const id = idOf(message);
   const isNotification = !("id" in message);
-  const params = isObject(message.params) ? message.params : {};
+  const params = isJsonObject(message.params) ? message.params : {};
 
   switch (message.method) {
     case "initialize":
@@ -111,7 +112,7 @@ function handleMessage(message: unknown, options: McpServerOptions): JsonRpcResp
       if (typeof params.name !== "string") {
         return error(id, INVALID_PARAMS, "tools/call requires a string 'name'");
       }
-      const args = isObject(params.arguments) ? params.arguments : {};
+      const args = isJsonObject(params.arguments) ? params.arguments : {};
       const { payload, isError } = callTool(options.tools, options.context, params.name, args);
       return result(id, {
         content: [{ type: "text", text: JSON.stringify(payload) }],
@@ -143,12 +144,8 @@ function error(id: JsonRpcId, code: number, message: string): JsonRpcResponse {
 }
 
 function idOf(message: unknown): JsonRpcId {
-  if (isObject(message) && (typeof message.id === "string" || typeof message.id === "number")) {
+  if (isJsonObject(message) && (typeof message.id === "string" || typeof message.id === "number")) {
     return message.id;
   }
   return null;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

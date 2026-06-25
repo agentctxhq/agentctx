@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "better-sqlite3";
+import { isJsonObject } from "../claude/json-file.js";
 import { insertRecord, listRecords } from "../storage/records.js";
 import { BODY_MAX_CHARS } from "../storage/types.js";
 
@@ -152,7 +153,7 @@ function detectStack(dir: string, pkg: PackageJson | null): string[] {
   const lines: string[] = [];
 
   if (pkg !== null) {
-    const engines = isObject(pkg.engines) ? pkg.engines : {};
+    const engines = isJsonObject(pkg.engines) ? pkg.engines : {};
     const nodeRange = typeof engines.node === "string" ? ` (node ${engines.node})` : "";
     lines.push(`Runtime: Node.js${nodeRange}`);
 
@@ -192,7 +193,7 @@ function detectStack(dir: string, pkg: PackageJson | null): string[] {
 }
 
 function detectCommands(dir: string, pkg: PackageJson): string[] {
-  const scripts = isObject(pkg.scripts) ? pkg.scripts : {};
+  const scripts = isJsonObject(pkg.scripts) ? pkg.scripts : {};
   const names = Object.keys(scripts).filter((name) => typeof scripts[name] === "string");
   if (names.length === 0) {
     return [];
@@ -212,7 +213,7 @@ function detectEntryPoints(pkg: PackageJson): string[] {
 
   if (typeof pkg.bin === "string") {
     lines.push(`bin: ${pkg.bin}`);
-  } else if (isObject(pkg.bin)) {
+  } else if (isJsonObject(pkg.bin)) {
     for (const [name, target] of Object.entries(pkg.bin)) {
       lines.push(`bin ${name}: ${String(target)}`);
     }
@@ -224,7 +225,9 @@ function detectEntryPoints(pkg: PackageJson): string[] {
     lines.push(`module: ${pkg.module}`);
   }
   if (pkg.exports !== undefined) {
-    const keys = isObject(pkg.exports) ? Object.keys(pkg.exports).join(", ") : String(pkg.exports);
+    const keys = isJsonObject(pkg.exports)
+      ? Object.keys(pkg.exports).join(", ")
+      : String(pkg.exports);
     lines.push(`exports: ${keys}`);
   }
 
@@ -262,7 +265,7 @@ function scriptRunner(packageManager: string | null): string {
 function collectDependencies(pkg: PackageJson): Set<string> {
   const deps = new Set<string>();
   for (const group of [pkg.dependencies, pkg.devDependencies]) {
-    if (isObject(group)) {
+    if (isJsonObject(group)) {
       for (const name of Object.keys(group)) {
         deps.add(name);
       }
@@ -275,7 +278,7 @@ function workspacePackages(workspaces: unknown): string[] {
   if (Array.isArray(workspaces)) {
     return workspaces.filter((workspace): workspace is string => typeof workspace === "string");
   }
-  if (isObject(workspaces) && Array.isArray(workspaces.packages)) {
+  if (isJsonObject(workspaces) && Array.isArray(workspaces.packages)) {
     return workspaces.packages.filter(
       (workspace): workspace is string => typeof workspace === "string",
     );
@@ -286,14 +289,10 @@ function workspacePackages(workspaces: unknown): string[] {
 function readPackageJson(dir: string): PackageJson | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-    return isObject(parsed) ? (parsed as PackageJson) : null;
+    return isJsonObject(parsed) ? (parsed as PackageJson) : null;
   } catch {
     return null;
   }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function clip(body: string): string {
