@@ -354,7 +354,9 @@ export function toolDefinitions(): ToolDefinition[] {
           ids: {
             type: "array",
             items: { type: "string" },
-            description: `Record ids from ctx_search/ctx_related (max ${GET_IDS_MAX})`,
+            minItems: 1,
+            maxItems: GET_IDS_MAX,
+            description: `Record ids from ctx_search/ctx_related (at least 1, max ${GET_IDS_MAX})`,
           },
         },
         required: ["ids"],
