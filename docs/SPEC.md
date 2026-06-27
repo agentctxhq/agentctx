@@ -119,7 +119,8 @@ CREATE VIRTUAL TABLE records_fts USING fts5(title, body, content=records, conten
 CREATE TABLE nodes (
   id TEXT PRIMARY KEY, project_id TEXT,
   kind TEXT,                               -- file | symbol | package | module | branch
-  name TEXT UNIQUE
+  name TEXT NOT NULL,
+  UNIQUE(project_id, name)                 -- per-project: same name (e.g. `main` branch) may exist in different projects
 );
 CREATE TABLE edges (
   id TEXT PRIMARY KEY,
