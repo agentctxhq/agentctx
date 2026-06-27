@@ -582,6 +582,11 @@ function optionalString(args: Record<string, unknown>, name: string): string | u
   if (typeof value !== "string") {
     throw new McpToolError(`${name} must be a string`);
   }
+  // Treat empty/whitespace-only strings as absent, matching requireString's
+  // non-empty rule. This way an optional filter such as `ctx_search file: ""`
+  // means "no filter" rather than "filter to a file named ''" (which links to
+  // no entity and silently returns zero results).
+  if (value.trim().length === 0) return undefined;
   return value;
 }
 
