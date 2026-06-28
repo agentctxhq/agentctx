@@ -81,7 +81,7 @@ Registered at user scope by `agentctx init`; runs as `agentctx mcp`.
 - Node 20/22/24 support matrix enforced at `init` (OQ-1 resolved); ABI-mismatch and missing-prebuild failures on unsupported Node versions are translated into actionable support-matrix guidance (`cli/node-support.ts`) instead of a stack trace; native code is never compiled on the install path
 - End-to-end test (`test/e2e.test.ts`): init → hook invocations with fixture payloads → mocked Anthropic API extraction → consolidation → SessionStart digest correctness; both injection budgets asserted (≤1,500 / ≤2,000 tokens); session dedup verified; extraction cost lands on the session row
 - Invariant audit: superseded records do not surface in any default path (hooks, MCP, CLI search/export/status); concurrent WAL writes verified safe; hooks exit 0 against missing and corrupt stores
-- 287 tests across unit, integration, and end-to-end suites; `npm run check` (lint + typecheck + test) is the CI gate
+- 287 tests across unit, integration, and end-to-end suites; CI runs lint plus the build/test matrix, while `npm run check` is the full local gate (lint + typecheck + build + test)
 
 ---
 

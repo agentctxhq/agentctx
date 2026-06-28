@@ -90,7 +90,7 @@ npm ci          # install workspace dependencies
 npm run build   # compile TypeScript (all packages)
 npm run test    # run tests (vitest)
 npm run lint    # lint + format check (biome)
-npm run check   # lint + typecheck + test, what CI runs
+npm run check   # local full gate: lint + typecheck + build + test
 ```
 
 Requires Node ≥ 20 (see `.nvmrc`).
