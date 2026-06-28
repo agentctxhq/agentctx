@@ -27,7 +27,7 @@ npm ci          # install (Node ≥ 20, see .nvmrc)
 npm run build   # compile TypeScript
 npm run test    # vitest
 npm run lint    # biome (lint + format)
-npm run check   # everything CI runs
+npm run check   # local full gate: lint + typecheck + build + test
 ```
 
 ## Contribution Standards
