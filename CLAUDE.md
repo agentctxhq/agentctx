@@ -48,7 +48,7 @@ npm run build     # tsc → packages/agentctx/dist
 npm run test      # vitest, all packages
 npm run typecheck # tsc --noEmit
 npm run lint      # biome check (lint + format)
-npm run check     # lint + typecheck + test — what CI runs
+npm run check     # local full gate: lint + typecheck + build + test
 node packages/agentctx/dist/cli.js   # run the CLI after building
 ```
 
