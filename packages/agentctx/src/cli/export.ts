@@ -70,7 +70,13 @@ export async function runExport(env: CliEnv, args: string[]): Promise<number> {
   }
 
   if (values.out !== undefined) {
-    writeFileSync(values.out, markdown, "utf8");
+    try {
+      writeFileSync(values.out, markdown, "utf8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      env.io.err(`agentctx export: ${msg}`);
+      return 1;
+    }
     env.io.out(`✓ exported ${count} record(s) to ${values.out}`);
   } else {
     env.io.out(markdown);
